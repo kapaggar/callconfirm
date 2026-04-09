@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1e293b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<title>Vipassana Call Tracker</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f1f5f9; --card: #fff; --text: #1e293b; --muted: #64748b; --light: #94a3b8;
+    --border: #e2e8f0; --header: #1e293b; --accent: #3b82f6;
+    --green: #16a34a; --red: #dc2626; --orange: #ea580c; --blue: #2563eb; --purple: #9333ea; --cyan: #0891b2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  button, input, textarea { font-family: inherit; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: 14px 16px 10px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+  .header-top { display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 15px; font-weight: 700; line-height: 1.2; }
+  .header .sub { font-size: 11px; color: var(--light); margin-top: 2px; }
+  .header-btns { display: flex; gap: 8px; }
+  .btn { border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-blue { background: var(--accent); color: #fff; }
+  .btn-gray { background: #475569; color: #fff; }
+
+  /* Stats */
+  .stats { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
+  .pill { padding: 4px 10px; border-radius: 20px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
+  .pill.active { background: #fff; color: var(--text); }
+  .pill:not(.active) { background: rgba(255,255,255,.1); color: var(--light); }
+
+  /* Search */
+  .search { margin-top: 8px; }
+  .search input { width: 100%; padding: 8px 12px; border-radius: 8px; border: none; background: #475569; color: #fff; font-size: 13px; outline: none; }
+  .search input::placeholder { color: #94a3b8; }
+
+  /* Export dropdown */
+  .export-dd { margin-top: 10px; background: #fff; border-radius: 10px; padding: 4px; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
+  .export-dd button { display: block; width: 100%; text-align: left; padding: 10px 14px; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text); border-radius: 8px; }
+  .export-dd button:active { background: #f1f5f9; }
+
+  /* Cards */
+  .list { padding: 10px 12px; }
+  .card { background: var(--card); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.04); overflow: hidden; }
+  .card-main { padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+  .card-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .card-info { flex: 1; min-width: 0; }
+  .card-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-meta { font-size: 11px; color: var(--light); margin-top: 1px; }
+  .card-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px; }
+
+  /* Expanded */
+  .card-expanded { padding: 0 14px 12px; border-top: 1px solid #f1f5f9; }
+  .phone-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .phone-btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; text-decoration: none; font-weight: 600; font-size: 13px; }
+  .phone-mobile { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+  .phone-home { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+  .status-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .status-btn { padding: 9px 6px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.2; text-align: center; transition: all .15s; }
+  .status-btn:active { transform: scale(.95); }
+  .notes { width: 100%; margin-top: 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; resize: vertical; min-height: 36px; background: #f8fafc; outline: none; color: #334155; }
+  .reset-btn { margin-top: 6px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: #f8fafc; font-size: 11px; color: var(--light); cursor: pointer; }
+
+  /* Upload screen */
+  .upload-screen { min-height: 100vh; background: linear-gradient(135deg, #f8fafc, #e2e8f0); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+  .upload-screen h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  .upload-screen .sub { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
+  .upload-box { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 360px; height: 160px; border: 2px dashed var(--light); border-radius: 16px; cursor: pointer; background: #fff; }
+  .prev-sessions { margin-top: 32px; width: 100%; max-width: 360px; }
+  .prev-sessions h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .session-btn { display: block; width: 100%; text-align: left; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: #fff; cursor: pointer; }
+  .session-btn .title { font-weight: 600; font-size: 13px; }
+  .session-btn .meta { font-size: 11px; color: var(--light); margin-top: 2px; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 20px rgba(0,0,0,.25); z-index: 1000; white-space: nowrap; animation: fadeup .3s; }
+  @keyframes fadeup { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+
+  .empty { text-align: center; padding: 40px; color: var(--light); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const STATUSES = {
+  pending:      { label:"Pending",    icon:"⏳", color:"#94a3b8", bg:"#f1f5f9" },
+  confirmed:    { label:"Confirmed",  icon:"✅", color:"#16a34a", bg:"#f0fdf4" },
+  cancelled:    { label:"Cancelled",  icon:"❌", color:"#dc2626", bg:"#fef2f2" },
+  no_answer:    { label:"No Answer",  icon:"📵", color:"#ea580c", bg:"#fff7ed" },
+  callback:     { label:"Callback",   icon:"🔄", color:"#2563eb", bg:"#eff6ff" },
+  tentative:    { label:"Tentative",  icon:"🤔", color:"#9333ea", bg:"#faf5ff" },
+  left_message: { label:"Left Msg",   icon:"💬", color:"#0891b2", bg:"#ecfeff" },
+};
+const DB_NAME = "vcall";
+const DB_VER = 1;
+let db = null;
+
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, DB_VER);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains("sessions")) d.createObjectStore("sessions", { keyPath: "id" });
+    };
+    r.onsuccess = () => { db = r.result; res(db); };
+    r.onerror = () => rej(r.error);
+  });
+}
+function dbPut(store, val) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).put(val);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+function dbGet(store, key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readonly");
+    const r = tx.objectStore(store).get(key);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function dbGetAll(store) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readonly");
+    const r = tx.objectStore(store).getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+// ── State ──
+let state = {
+  sessions: [],
+  activeId: null,
+  applicants: [],
+  courseTitle: "",
+  filter: "all",
+  search: "",
+  expandedId: null,
+  showExport: false,
+  toast: null,
+  toastTimer: null,
+};
+
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+function showToast(msg) {
+  clearTimeout(state.toastTimer);
+  state.toast = msg;
+  state.toastTimer = setTimeout(() => { state.toast = null; render(); }, 2500);
+  render();
+}
+
+// ── Format phone ──
+function fmtPhone(num) {
+  if (!num) return "";
+  num = String(num).trim();
+  if (num === "0" || num.toLowerCase() === "na") return "";
+  num = num.replace(/[^0-9+]/g, "");
+  if (num.startsWith("+")) return num;
+  if (num.length < 10) num = "0".repeat(10 - num.length) + num;
+  return "+91" + num;
+}
+function timeAgo(iso) {
+  if (!iso) return "";
+  const d = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(d / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.floor(h / 24) + "d ago";
+}
+
+// ── Parse Excel ──
+function parseExcel(ab, fileName) {
+  const wb = XLSX.read(ab);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+  const title = rows[0]?.[0] || fileName.replace(/\.xlsx?$/i, "");
+  const hdr = (rows[1] || []).map(h => String(h || "").toLowerCase().trim());
+  const ci = (patterns) => hdr.findIndex(h => patterns.some(p => h.includes(p)));
+  const nameI = ci(["name"]), mobI = ci(["phonemobile","mobile"]), homeI = ci(["phonehome","phonehome"]);
+  const genderI = ci(["gender"]), ageI = ci(["age"]), cityI = ci(["city"]);
+
+  const apps = [];
+  for (let i = 2; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[nameI]) continue;
+    apps.push({
+      id: i + "-" + Date.now(),
+      name: String(r[nameI]).replace(/\s+/g, " ").trim(),
+      mobile: fmtPhone(r[mobI]),
+      home: fmtPhone(r[homeI]),
+      gender: genderI >= 0 ? (r[genderI] || "") : "",
+      age: ageI >= 0 ? (r[ageI] || "") : "",
+      city: cityI >= 0 ? (r[cityI] || "") : "",
+      status: "pending", attempts: 0, lastAttempt: null, notes: "",
+    });
+  }
+  apps.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+  const pretty = title.replace(/_/g, " ").replace(/(\d{4})-(\d{2})-(\d{2})/g, (_, y, m, d) => d + "/" + m + "/" + y);
+  return { apps, title: pretty };
+}
+
+// ── File handler ──
+async function handleFile(file) {
+  const ab = await file.arrayBuffer();
+  const { apps, title } = parseExcel(ab, file.name);
+  const sid = "s-" + Date.now();
+  const sess = { id: sid, title, createdAt: new Date().toISOString(), count: apps.length, applicants: apps };
+  await dbPut("sessions", sess);
+  const all = await dbGetAll("sessions");
+  setState({ sessions: all, activeId: sid, applicants: apps, courseTitle: title, filter: "all", search: "", expandedId: null, showExport: false });
+  showToast("Loaded " + apps.length + " applicants");
+}
+
+async function loadSession(sid) {
+  const s = await dbGet("sessions", sid);
+  if (s) setState({ activeId: sid, applicants: s.applicants || [], courseTitle: s.title || "", filter: "all", search: "", expandedId: null, showExport: false });
+}
+
+async function saveApplicants() {
+  const s = await dbGet("sessions", state.activeId);
+  if (s) { s.applicants = state.applicants; s.updatedAt = new Date().toISOString(); await dbPut("sessions", s); }
+}
+
+function updateApp(id, patch) {
+  state.applicants = state.applicants.map(a => a.id === id ? { ...a, ...patch } : a);
+  render();
+  saveApplicants();
+}
+function markStatus(id, status) {
+  const a = state.applicants.find(x => x.id === id);
+  const inc = ["no_answer","left_message"].includes(status);
+  updateApp(id, { status, attempts: inc ? (a.attempts||0)+1 : a.attempts, lastAttempt: new Date().toISOString() });
+  showToast(a.name.split(" ")[0] + " → " + STATUSES[status].label);
+}
+function logAttempt(id) {
+  const a = state.applicants.find(x => x.id === id);
+  updateApp(id, { attempts: (a.attempts||0)+1, lastAttempt: new Date().toISOString() });
+}
+
+// ── Exports ──
+function exportWhatsApp() {
+  const A = state.applicants, stats = {};
+  A.forEach(a => { stats[a.status] = (stats[a.status]||0)+1; });
+  const g = {}; Object.keys(STATUSES).forEach(s => g[s] = []);
+  A.forEach(a => g[a.status]?.push(a));
+  let t = "📋 *" + state.courseTitle + "*\n📊 *Call Results Summary*\n━━━━━━━━━━━━━━━━━━\n\n";
+  Object.entries(STATUSES).forEach(([k,v]) => {
+    if (g[k]?.length) {
+      t += v.icon + " *" + v.label + "* (" + g[k].length + ")\n";
+      g[k].forEach((a,i) => { t += "  " + (i+1) + ". " + a.name + " — " + a.mobile + "\n"; });
+      t += "\n";
+    }
+  });
+  t += "━━━━━━━━━━━━━━━━━━\nTotal: " + A.length + " | ✅ " + (stats.confirmed||0) + " | ❌ " + (stats.cancelled||0) + " | ⏳ " + (stats.pending||0);
+  navigator.clipboard.writeText(t);
+  showToast("Copied WhatsApp summary!");
+  setState({ showExport: false });
+}
+function exportExcel() {
+  const data = state.applicants.map((a,i) => ({
+    "S.No": i+1, Name: a.name, Mobile: a.mobile, Home: a.home,
+    Status: STATUSES[a.status]?.label || a.status, Attempts: a.attempts,
+    "Last Attempt": a.lastAttempt ? new Date(a.lastAttempt).toLocaleString("en-IN") : "", Notes: a.notes,
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws["!cols"] = [{wch:5},{wch:25},{wch:16},{wch:16},{wch:12},{wch:9},{wch:20},{wch:30}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Results");
+  XLSX.writeFile(wb, state.courseTitle.replace(/[^a-zA-Z0-9]/g,"_") + "_results.xlsx");
+  showToast("Excel downloaded!");
+  setState({ showExport: false });
+}
+function exportPDF() {
+  const A = state.applicants, stats = {};
+  A.forEach(a => { stats[a.status] = (stats[a.status]||0)+1; });
+  const rows = A.map((a,i) => `<tr style="background:${i%2===0?"#fff":"#f8f9fa"}">
+    <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${i+1}</td>
+    <td style="padding:6px 8px;border:1px solid #ccc;font-weight:500">${a.name}</td>
+    <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.mobile}</td>
+    <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.home}</td>
+    <td style="text-align:center;padding:6px 4px;border:1px solid #ccc;font-weight:600;color:${STATUSES[a.status]?.color||"#666"}">${STATUSES[a.status]?.label||a.status}</td>
+    <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${a.attempts}</td>
+    <td style="padding:6px 8px;border:1px solid #ccc;font-size:10px;color:#666">${a.notes||""}</td></tr>`).join("");
+  const w = window.open("","_blank");
+  w.document.write(`<!DOCTYPE html><html><head><title>${state.courseTitle}</title><style>
+    @page{margin:10mm}body{font-family:-apple-system,sans-serif;font-size:12px;margin:0;padding:10px}
+    h1{font-size:16px;text-align:center;margin:0 0 4px}.sub{text-align:center;color:#666;margin-bottom:10px;font-size:11px}
+    table{width:100%;border-collapse:collapse}th{background:#2c3e50;color:#fff;padding:7px 4px;border:1px solid #2c3e50;font-size:11px}
+  </style></head><body><h1>${state.courseTitle}</h1>
+  <div class="sub">✅ ${stats.confirmed||0} Confirmed | ❌ ${stats.cancelled||0} Cancelled | ⏳ ${stats.pending||0} Pending | Total: ${A.length}</div>
+  <table><tr><th>#</th><th>Name</th><th>Mobile</th><th>Home</th><th>Status</th><th>Att.</th><th>Notes</th></tr>${rows}</table>
+  <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  w.document.close();
+  setState({ showExport: false });
+}
+
+// ── Render ──
+function render() {
+  const el = document.getElementById("app");
+  const { sessions, activeId, applicants: A, courseTitle, filter, search, expandedId, showExport, toast } = state;
+
+  // Upload screen
+  if (!activeId || A.length === 0) {
+    el.innerHTML = `<div class="upload-screen">
+      <div style="font-size:48px;margin-bottom:8px">🧘</div>
+      <h1>Vipassana Call Tracker</h1>
+      <p class="sub">Upload your course Excel to begin</p>
+      <label class="upload-box" id="dropzone">
+        <div style="font-size:28px;margin-bottom:8px">📂</div>
+        <div style="font-weight:600;color:#334155;font-size:14px">Tap to select .xlsx file</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:4px">or drag & drop</div>
+        <input type="file" accept=".xlsx,.xls" id="fileInput" style="display:none">
+      </label>
+      ${sessions.length ? `<div class="prev-sessions"><h3>Previous Sessions</h3>${sessions.map(s =>
+        `<button class="session-btn" data-sid="${s.id}"><div class="title">${s.title}</div><div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString("en-IN")}</div></button>`
+      ).join("")}</div>` : ""}
+    </div>`;
+    document.getElementById("fileInput")?.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+    const dz = document.getElementById("dropzone");
+    dz?.addEventListener("dragover", e => e.preventDefault());
+    dz?.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+    document.querySelectorAll("[data-sid]").forEach(b => b.addEventListener("click", () => loadSession(b.dataset.sid)));
+    return;
+  }
+
+  // Stats
+  const stats = {};
+  A.forEach(a => { stats[a.status] = (stats[a.status]||0)+1; });
+  const pending = A.filter(a => ["pending","no_answer","callback"].includes(a.status)).length;
+  const filtered = A.filter(a => {
+    if (filter !== "all" && a.status !== filter) return false;
+    if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const statPills = [`<button class="pill ${filter==="all"?"active":""}" data-flt="all">All ${A.length}</button>`];
+  Object.entries(STATUSES).forEach(([k,v]) => {
+    if (stats[k] > 0) statPills.push(`<button class="pill ${filter===k?"active":""}" data-flt="${k}">${v.icon} ${stats[k]}</button>`);
+  });
+
+  const cards = filtered.map((a, idx) => {
+    const st = STATUSES[a.status];
+    const isExp = expandedId === a.id;
+    let exp = "";
+    if (isExp) {
+      const phoneBtns = [];
+      if (a.mobile) phoneBtns.push(`<a href="tel:${a.mobile}" class="phone-btn phone-mobile" data-call="${a.id}">📱 ${a.mobile}</a>`);
+      if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${a.home}" class="phone-btn phone-home" data-call="${a.id}">🏠 ${a.home}</a>`);
+
+      const statusBtns = Object.entries(STATUSES).filter(([k]) => k !== "pending").map(([k,v]) =>
+        `<button class="status-btn" data-mark="${a.id}|${k}" style="border:${a.status===k?"2px solid "+v.color:"1px solid #e2e8f0"};background:${a.status===k?v.bg:"#fff"};color:${a.status===k?v.color:"#64748b"}">${v.icon}<br>${v.label}</button>`
+      ).join("");
+
+      exp = `<div class="card-expanded">
+        <div class="phone-btns">${phoneBtns.join("")}</div>
+        <div class="status-grid">${statusBtns}</div>
+        <textarea class="notes" placeholder="Add a note..." data-note="${a.id}">${a.notes||""}</textarea>
+        ${a.status !== "pending" ? `<button class="reset-btn" data-mark="${a.id}|pending">↩ Reset to Pending</button>` : ""}
+      </div>`;
+    }
+    return `<div class="card" style="border-color:${a.status==="pending"?"#e2e8f0":st.color+"33"}">
+      <div class="card-main" data-toggle="${a.id}">
+        <div class="card-icon" style="background:${st.bg}">${st.icon}</div>
+        <div class="card-info">
+          <div class="card-name">${idx+1}. ${a.name}</div>
+          <div class="card-meta">${a.city?a.city+" · ":""}${a.attempts>0?a.attempts+" attempt"+(a.attempts>1?"s":"")+" · "+timeAgo(a.lastAttempt):"No attempts yet"}</div>
+        </div>
+        <div class="card-badge" style="color:${st.color};background:${st.bg}">${st.label}</div>
+      </div>${exp}</div>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="header">
+      <div class="header-top">
+        <div><h1>🧘 ${courseTitle}</h1><div class="sub">${A.length} applicants · ${pending} remaining</div></div>
+        <div class="header-btns">
+          <button class="btn btn-blue" id="exportBtn">📤 Export</button>
+          <label class="btn btn-gray" style="display:inline-flex;align-items:center;cursor:pointer">＋ New<input type="file" accept=".xlsx,.xls" id="newFile" style="display:none"></label>
+        </div>
+      </div>
+      ${showExport ? `<div class="export-dd">
+        <button id="expWA">📋 Copy for WhatsApp</button>
+        <button id="expXL">📊 Download Excel</button>
+        <button id="expPDF">🖨️ Print / PDF</button>
+      </div>` : ""}
+      <div class="stats">${statPills.join("")}</div>
+      <div class="search"><input type="text" placeholder="🔍  Search by name..." value="${search}" id="searchBox"></div>
+    </div>
+    <div class="list">${cards.length ? cards : '<div class="empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
+    ${toast ? `<div class="toast">${toast}</div>` : ""}`;
+
+  // ── Bind events ──
+  document.getElementById("exportBtn")?.addEventListener("click", () => setState({ showExport: !state.showExport }));
+  document.getElementById("expWA")?.addEventListener("click", exportWhatsApp);
+  document.getElementById("expXL")?.addEventListener("click", exportExcel);
+  document.getElementById("expPDF")?.addEventListener("click", exportPDF);
+  document.getElementById("newFile")?.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+  document.getElementById("searchBox")?.addEventListener("input", e => { state.search = e.target.value; render(); });
+
+  document.querySelectorAll("[data-flt]").forEach(b => b.addEventListener("click", () => {
+    const f = b.dataset.flt;
+    setState({ filter: state.filter === f && f !== "all" ? "all" : f });
+  }));
+  document.querySelectorAll("[data-toggle]").forEach(b => b.addEventListener("click", () => {
+    setState({ expandedId: state.expandedId === b.dataset.toggle ? null : b.dataset.toggle });
+  }));
+  document.querySelectorAll("[data-call]").forEach(b => b.addEventListener("click", () => logAttempt(b.dataset.call)));
+  document.querySelectorAll("[data-mark]").forEach(b => b.addEventListener("click", e => {
+    e.stopPropagation();
+    const [id, st] = b.dataset.mark.split("|");
+    markStatus(id, st);
+  }));
+  document.querySelectorAll("[data-note]").forEach(el => {
+    el.addEventListener("input", e => {
+      const a = state.applicants.find(x => x.id === el.dataset.note);
+      if (a) { a.notes = e.target.value; saveApplicants(); }
+    });
+    el.addEventListener("click", e => e.stopPropagation());
+  });
+}
+
+// ── Boot ──
+(async () => {
+  await openDB();
+  const all = await dbGetAll("sessions");
+  state.sessions = all;
+  if (all.length > 0) {
+    const last = all[all.length - 1];
+    state.activeId = last.id;
+    state.applicants = last.applicants || [];
+    state.courseTitle = last.title || "";
+  }
+  render();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>
