@@ -1,0 +1,17 @@
+{
+  "name": "Vipassana Call Tracker",
+  "short_name": "VCall",
+  "description": "Course attendance call tracker",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#1e293b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text y='68' x='50' text-anchor='middle' font-size='52'>🧘</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
