@@ -214,6 +214,43 @@ function parseExcel(ab, fileName) {
   return { apps, title: pretty };
 }
 
+// ── Import from DIPI (bookmarklet or clipboard) ──
+async function importDIPI(dipiArray, titleHint) {
+  const apps = dipiArray.map((d, i) => ({
+    id: i + "-" + Date.now(),
+    name: (d.name || "").replace(/\s+/g, " ").trim(),
+    mobile: fmtPhone(d.mobile),
+    home: fmtPhone(d.home),
+    gender: (d.type || "").includes("Female") ? "Female" : (d.type || "").includes("Male") ? "Male" : "",
+    age: d.age || "",
+    city: "",
+    status: "pending", attempts: 0, lastAttempt: null, notes: "",
+  })).filter(a => a.name);
+  apps.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+
+  const title = titleHint || "DIPI Course " + new Date().toLocaleDateString("en-IN");
+  const sid = "s-" + Date.now();
+  const sess = { id: sid, title, createdAt: new Date().toISOString(), count: apps.length, applicants: apps };
+  await dbPut("sessions", sess);
+  const all = await dbGetAll("sessions");
+  setState({ sessions: all, activeId: sid, applicants: apps, courseTitle: title, filter: "all", search: "", expandedId: null, showExport: false });
+  showToast("Imported " + apps.length + " from DIPI");
+}
+
+async function handlePasteFromDIPI() {
+  try {
+    const text = await navigator.clipboard.readText();
+    const data = JSON.parse(text);
+    if (Array.isArray(data) && data.length > 0 && data[0].name) {
+      await importDIPI(data);
+    } else {
+      showToast("Clipboard doesn't contain DIPI data");
+    }
+  } catch (e) {
+    showToast("Paste failed — copy data from DIPI first");
+  }
+}
+
 // ── File handler ──
 async function handleFile(file) {
   const ab = await file.arrayBuffer();
@@ -329,12 +366,31 @@ function render() {
       ${sessions.length ? `<div class="prev-sessions"><h3>Previous Sessions</h3>${sessions.map(s =>
         `<button class="session-btn" data-sid="${s.id}"><div class="title">${s.title}</div><div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString("en-IN")}</div></button>`
       ).join("")}</div>` : ""}
+      <div style="margin-top:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Import from DIPI</div>
+        <button class="session-btn" id="pasteBtn" style="text-align:center;background:#eff6ff;border-color:#bfdbfe">
+          <div class="title" style="color:#2563eb">📋 Paste from DIPI</div>
+          <div class="meta">Run bookmarklet on DIPI → Copy Data → Paste here</div>
+        </button>
+        <details style="font-size:11px;color:var(--muted);margin-top:4px">
+          <summary style="cursor:pointer;font-weight:600">How to setup the DIPI bookmarklet</summary>
+          <ol style="margin-top:8px;padding-left:20px;line-height:1.8">
+            <li>On iPhone Safari, bookmark any page</li>
+            <li>Edit the bookmark → replace the URL with the bookmarklet code</li>
+            <li>Go to your DIPI course search page</li>
+            <li>Tap the bookmarklet from your bookmarks</li>
+            <li>Wait for it to scrape all applicants</li>
+            <li>Tap "📋 Copy Data" or "📱 Open in Call Tracker"</li>
+          </ol>
+        </details>
+      </div>
     </div>`;
     document.getElementById("fileInput")?.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
     const dz = document.getElementById("dropzone");
     dz?.addEventListener("dragover", e => e.preventDefault());
     dz?.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
     document.querySelectorAll("[data-sid]").forEach(b => b.addEventListener("click", () => loadSession(b.dataset.sid)));
+    document.getElementById("pasteBtn")?.addEventListener("click", handlePasteFromDIPI);
     return;
   }
 
@@ -439,6 +495,27 @@ function render() {
   await openDB();
   const all = await dbGetAll("sessions");
   state.sessions = all;
+
+  // Check URL hash for DIPI data: #dipi=base64encodedJSON
+  const hash = window.location.hash;
+  if (hash.startsWith('#dipi=')) {
+    try {
+      const b64 = hash.substring(6);
+      const json = decodeURIComponent(escape(atob(b64)));
+      const data = JSON.parse(json);
+      // Support both formats: raw array or {apps, title} object
+      if (Array.isArray(data) && data.length > 0) {
+        await importDIPI(data);
+        window.location.hash = '';
+        return;
+      } else if (data.apps && Array.isArray(data.apps)) {
+        await importDIPI(data.apps, data.title || '');
+        window.location.hash = '';
+        return;
+      }
+    } catch (e) { console.error("DIPI hash parse error:", e); }
+  }
+
   if (all.length > 0) {
     const last = all[all.length - 1];
     state.activeId = last.id;
