@@ -15,18 +15,18 @@ sw.js           ← Offline support
 ## Deploy
 
 ```bash
-gh repo create vipassana-tracker --public --clone
-cd vipassana-tracker
+gh repo create callconfirm --public --clone
+cd callconfirm
 # Copy all 5 files here
 git add -A && git commit -m "init" && git push
 # Settings → Pages → Source: main, root → Save
 ```
 
-Live at: `https://kapaggar.github.io/vipassana-tracker/`
+Live at: `https://kapaggar.github.io/callconfirm/`
 
 ## Setup (one-time)
 
-1. Open `.../vipassana-tracker/setup.html` on your phone
+1. Open `.../callconfirm/setup.html` on your phone
 2. Copy the bookmarklet → save as a Safari bookmark
 
 ## Usage
