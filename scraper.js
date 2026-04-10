@@ -1,6 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
-// DIPI Scraper v3 — Based on actual DIPI source HTML structure
-// Drupal 7 site · jQuery DataTables · Bootstrap 3
+// DIPI Scraper v4 — Verified against live DIPI DOM structure
+//
+// Main rows:     tr.odd / tr.even (DataTable alternating classes)
+// Expanded flag: tr.odd.shown / tr.even.shown
+// Detail row:    tr.no-padding (single td colspan, address + phones)
+// Phone format:  "... / H: 9536074750 M: 9536216216 O:  Email: ..."
+// Course select: select#edit-course option[value]
+// Upcoming:      div.summary-block div.table-heading a[href^="/course/63/"]
 // ═══════════════════════════════════════════════════════════════
 
 (function() {
@@ -12,219 +18,167 @@
   var STATUS_FILTER = 'Expected,Confirmed';
   var PWA_URL = window._DIPI_PWA_URL || '';
 
-  // Cleanup previous instance
+  // Cleanup
   var old = document.getElementById('_ds');
   if (old) old.remove();
 
-  // ── UI Shell ──
-  var overlay = document.createElement('div');
-  overlay.id = '_ds';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch';
-  document.body.appendChild(overlay);
+  // UI
+  var ov = document.createElement('div');
+  ov.id = '_ds';
+  ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  document.body.appendChild(ov);
 
-  function setUI(html) {
-    overlay.innerHTML = '<div style="width:100%;max-width:420px;padding:16px">' + html + '</div>';
-  }
-  function showStatus(msg) {
-    setUI('<div style="text-align:center;padding:40px 0"><div style="font-size:28px;margin-bottom:10px">\u{1F9D8}</div><div style="font-size:14px;font-weight:600">' + msg + '</div></div>');
-  }
+  function setUI(h) { ov.innerHTML = '<div style="width:100%;max-width:420px;padding:16px">' + h + '</div>'; }
+  function showMsg(m) { setUI('<div style="text-align:center;padding:40px 0"><div style="font-size:28px;margin-bottom:10px">\u{1F9D8}</div><div style="font-size:14px;font-weight:600">' + m + '</div></div>'); }
+  function close() { ov.remove(); }
 
-  // ── Detect page ──
+  // Detect page
   var path = window.location.pathname;
-  var isSearchPage = path.indexOf('/search-course/') > -1;
-  var autoScrape = sessionStorage.getItem('_ds_auto');
+  var isSearch = path.indexOf('/search-course/') > -1;
+  var auto = sessionStorage.getItem('_ds_auto');
 
-  if (isSearchPage && autoScrape) {
+  if (isSearch && auto) {
     sessionStorage.removeItem('_ds_auto');
     runScraper();
-  } else if (isSearchPage) {
+  } else if (isSearch) {
     setUI(
       '<div style="text-align:center;padding:20px 0">' +
       '<div style="font-size:20px;margin-bottom:4px">\u{1F9D8}</div>' +
       '<div style="font-size:15px;font-weight:700;margin-bottom:16px">DIPI Scraper</div>' +
-      '<button id="_ds-go" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">\u{1F504} Scrape This Page</button>' +
-      '<button id="_ds-pick" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:#475569;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">\u{1F4CB} Pick Different Course</button>' +
-      '<button id="_ds-x" style="display:block;width:100%;padding:12px;background:transparent;color:#94a3b8;border:1px solid #475569;border-radius:10px;font-size:14px;cursor:pointer">\u2715 Cancel</button>' +
+      btn('_ds-go', '#3b82f6', '\u{1F504} Scrape This Page') +
+      btn('_ds-pick', '#475569', '\u{1F4CB} Pick Different Course') +
+      btn('_ds-x', 'transparent', '\u2715 Cancel', '#94a3b8', '1px solid #475569') +
       '</div>'
     );
     document.getElementById('_ds-go').onclick = runScraper;
-    document.getElementById('_ds-pick').onclick = showCoursePicker;
-    document.getElementById('_ds-x').onclick = function() { overlay.remove(); };
+    document.getElementById('_ds-pick').onclick = pickCourse;
+    document.getElementById('_ds-x').onclick = close;
   } else {
-    showCoursePicker();
+    pickCourse();
+  }
+
+  function btn(id, bg, label, color, border) {
+    return '<button id="' + id + '" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:' + bg + ';color:' + (color || '#fff') + ';border:' + (border || 'none') + ';border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">' + label + '</button>';
   }
 
   // ═════════════════════════════════════
   // PHASE 1: Course Picker
   // ═════════════════════════════════════
-  function showCoursePicker() {
-    showStatus('Loading courses...');
+  function pickCourse() {
+    showMsg('Loading courses...');
 
     fetch(CENTRE_URL, { credentials: 'same-origin' })
       .then(function(r) { return r.text(); })
       .then(function(html) {
-        var parser = new DOMParser();
-        var doc = parser.parseFromString(html, 'text/html');
+        var doc = new DOMParser().parseFromString(html, 'text/html');
 
-        // ── Get upcoming course IDs from summary-block headings ──
-        // Structure: div.summary-block > div.table-heading > a[href="/course/63/{id}"]
-        var upcomingIds = {};
-        var upcomingOrder = [];
-        var headings = doc.querySelectorAll('div.summary-block div.table-heading a');
-        for (var h = 0; h < headings.length; h++) {
-          var href = headings[h].getAttribute('href') || '';
-          var m = href.match(/\/course\/\d+\/(\d+)/);
-          if (m) {
-            upcomingIds[m[1]] = true;
-            upcomingOrder.push(m[1]);
+        // Upcoming IDs from: div.summary-block > div.table-heading > a[href="/course/63/{id}"]
+        var upIds = {};
+        var upOrder = [];
+        doc.querySelectorAll('div.summary-block div.table-heading a').forEach(function(a) {
+          var m = (a.getAttribute('href') || '').match(/\/course\/\d+\/(\d+)/);
+          if (m && !upIds[m[1]]) { upIds[m[1]] = true; upOrder.push(m[1]); }
+        });
+
+        // Counts from summary tables
+        var counts = {};
+        doc.querySelectorAll('div.summary-block').forEach(function(block) {
+          var link = block.querySelector('div.table-heading a');
+          if (!link) return;
+          var m = (link.getAttribute('href') || '').match(/\/course\/\d+\/(\d+)/);
+          if (!m) return;
+          var exp = 0, conf = 0;
+          block.querySelectorAll('tbody tr').forEach(function(tr) {
+            var label = (tr.querySelector('td:first-child a') || {}).textContent || '';
+            var tot = 0;
+            tr.querySelectorAll('b a').forEach(function(ba) { tot += parseInt(ba.textContent) || 0; });
+            if (label.trim() === 'Expected') exp = tot;
+            if (label.trim() === 'Confirmed') conf = tot;
+          });
+          counts[m[1]] = { exp: exp, conf: conf };
+        });
+
+        // All courses from: select#edit-course option
+        var all = [];
+        doc.querySelectorAll('select#edit-course option').forEach(function(opt) {
+          if (opt.value && opt.textContent.trim()) {
+            all.push({ id: opt.value, title: opt.textContent.trim(), up: !!upIds[opt.value] });
           }
-        }
+        });
 
-        // ── Get Expected + Confirmed counts from summary tables ──
-        var courseCounts = {};
-        var blocks = doc.querySelectorAll('div.summary-block');
-        for (var b = 0; b < blocks.length; b++) {
-          var headingLink = blocks[b].querySelector('div.table-heading a');
-          if (!headingLink) continue;
-          var idMatch = (headingLink.getAttribute('href') || '').match(/\/course\/\d+\/(\d+)/);
-          if (!idMatch) continue;
-          var cid = idMatch[1];
+        var upcoming = upOrder.map(function(id) { return all.find(function(c) { return c.id === id; }); }).filter(Boolean);
+        var others = all.filter(function(c) { return !c.up; });
 
-          // Find Expected and Confirmed rows in the summary table
-          var countExp = 0, countConf = 0;
-          var tds = blocks[b].querySelectorAll('tbody tr td:first-child a');
-          for (var t = 0; t < tds.length; t++) {
-            var text = tds[t].textContent.trim();
-            var row = tds[t].closest('tr');
-            if (!row) continue;
-            // The "Total" column (bold) for both M and F
-            var bolds = row.querySelectorAll('b a');
-            var total = 0;
-            for (var bb = 0; bb < bolds.length; bb++) {
-              total += parseInt(bolds[bb].textContent) || 0;
-            }
-            if (text === 'Expected') countExp = total;
-            if (text === 'Confirmed') countConf = total;
-          }
-          courseCounts[cid] = { expected: countExp, confirmed: countConf, total: countExp + countConf };
-        }
-
-        // ── Get ALL courses from select#edit-course dropdown ──
-        var allCourses = [];
-        var opts = doc.querySelectorAll('select#edit-course option');
-        for (var o = 0; o < opts.length; o++) {
-          var val = opts[o].value;
-          var label = opts[o].textContent.trim();
-          if (val && label) {
-            allCourses.push({ id: val, title: label, upcoming: !!upcomingIds[val] });
-          }
-        }
-
-        // Separate upcoming and other courses
-        var upcoming = [];
-        // Maintain order from summary blocks
-        for (var u = 0; u < upcomingOrder.length; u++) {
-          var uc = allCourses.find(function(c) { return c.id === upcomingOrder[u]; });
-          if (uc) upcoming.push(uc);
-        }
-        var others = allCourses.filter(function(c) { return !c.upcoming; });
-
-        if (allCourses.length === 0) {
-          setUI(
-            '<div style="text-align:center;padding:20px">' +
-            '<div style="font-size:24px;margin-bottom:8px">\u26A0\uFE0F</div>' +
-            '<div style="font-size:14px;margin-bottom:12px">No courses found. Are you logged in?</div>' +
-            '<button id="_ds-x" style="padding:12px 24px;background:#475569;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer">\u2715 Close</button></div>'
-          );
-          document.getElementById('_ds-x').onclick = function() { overlay.remove(); };
+        if (all.length === 0) {
+          setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u26A0\uFE0F</div><div style="font-size:14px;margin-bottom:12px">No courses found. Are you logged in?</div>' + btn('_ds-x', '#475569', '\u2715 Close') + '</div>');
+          document.getElementById('_ds-x').onclick = close;
           return;
         }
 
-        // ── Build picker UI ──
-        var pickerHtml = '<div style="text-align:center;margin-bottom:14px">' +
-          '<div style="font-size:20px;margin-bottom:2px">\u{1F9D8}</div>' +
-          '<div style="font-size:15px;font-weight:700">Select Course</div>' +
-          '<div style="font-size:11px;color:#94a3b8;margin-top:2px">Fetches Expected + Confirmed applicants</div></div>';
+        // Build UI
+        var h = '<div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;margin-bottom:2px">\u{1F9D8}</div><div style="font-size:15px;font-weight:700">Select Course</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">Expected + Confirmed</div></div>';
 
-        if (upcoming.length > 0) {
-          pickerHtml += '<div style="font-size:10px;font-weight:700;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">\u{1F4C5} Upcoming Courses</div>';
-          upcoming.forEach(function(c, idx) {
-            var cnt = courseCounts[c.id];
-            var badge = cnt ? '<div style="display:flex;gap:6px;margin-top:4px">' +
-              '<span style="font-size:10px;background:#f59e0b22;color:#f59e0b;padding:2px 6px;border-radius:4px">Exp ' + cnt.expected + '</span>' +
-              '<span style="font-size:10px;background:#22c55e22;color:#22c55e;padding:2px 6px;border-radius:4px">Conf ' + cnt.confirmed + '</span>' +
-              '<span style="font-size:10px;background:#3b82f622;color:#3b82f6;padding:2px 6px;border-radius:4px">Total ' + cnt.total + '</span></div>' : '';
-            pickerHtml += '<button class="_ds-c" data-cid="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;' +
-              'background:' + (idx === 0 ? '#1e3a5f' : '#1e293b') + ';border:' + (idx === 0 ? '2px solid #3b82f6' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff">' +
+        if (upcoming.length) {
+          h += '<div style="font-size:10px;font-weight:700;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">\u{1F4C5} Upcoming</div>';
+          upcoming.forEach(function(c, i) {
+            var cnt = counts[c.id];
+            var badges = cnt ? '<div style="display:flex;gap:6px;margin-top:4px">' +
+              '<span style="font-size:10px;background:#f59e0b22;color:#f59e0b;padding:2px 6px;border-radius:4px">Exp ' + cnt.exp + '</span>' +
+              '<span style="font-size:10px;background:#22c55e22;color:#22c55e;padding:2px 6px;border-radius:4px">Conf ' + cnt.conf + '</span>' +
+              '<span style="font-size:10px;background:#3b82f622;color:#3b82f6;padding:2px 6px;border-radius:4px">\u03A3 ' + (cnt.exp + cnt.conf) + '</span></div>' : '';
+            h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;background:' + (i === 0 ? '#1e3a5f' : '#1e293b') + ';border:' + (i === 0 ? '2px solid #3b82f6' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff">' +
               '<div style="font-size:13px;font-weight:600;line-height:1.3">' + c.title + '</div>' +
-              (idx === 0 ? '<div style="font-size:9px;color:#60a5fa;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') +
-              badge + '</button>';
+              (i === 0 ? '<div style="font-size:9px;color:#60a5fa;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') +
+              badges + '</button>';
           });
         }
 
-        if (others.length > 0) {
-          pickerHtml += '<details style="margin-top:12px"><summary style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;cursor:pointer;margin-bottom:6px">\u{1F4C1} All Courses (' + others.length + ')</summary><div style="margin-top:6px">';
+        if (others.length) {
+          h += '<details style="margin-top:12px"><summary style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;cursor:pointer">\u{1F4C1} All Courses (' + others.length + ')</summary><div style="margin-top:6px">';
           others.forEach(function(c) {
-            pickerHtml += '<button class="_ds-c" data-cid="' + c.id + '" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:4px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:12px">' + c.title + '</button>';
+            h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:4px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:12px">' + c.title + '</button>';
           });
-          pickerHtml += '</div></details>';
+          h += '</div></details>';
         }
 
-        pickerHtml += '<button id="_ds-x" style="display:block;width:100%;padding:12px;margin-top:12px;background:transparent;color:#64748b;border:1px solid #334155;border-radius:10px;font-size:13px;cursor:pointer">\u2715 Cancel</button>';
+        h += '<button id="_ds-x" style="display:block;width:100%;padding:12px;margin-top:12px;background:transparent;color:#64748b;border:1px solid #334155;border-radius:10px;font-size:13px;cursor:pointer">\u2715 Cancel</button>';
+        setUI(h);
 
-        setUI(pickerHtml);
-
-        // Bind
-        var btns = document.querySelectorAll('._ds-c');
-        for (var i = 0; i < btns.length; i++) {
-          btns[i].onclick = function() { navigateToCourse(this.getAttribute('data-cid')); };
-        }
-        document.getElementById('_ds-x').onclick = function() { overlay.remove(); };
+        document.querySelectorAll('._ds-c').forEach(function(b) {
+          b.onclick = function() { goToCourse(this.dataset.id); };
+        });
+        document.getElementById('_ds-x').onclick = close;
       })
-      .catch(function(err) {
-        setUI(
-          '<div style="text-align:center;padding:20px">' +
-          '<div style="font-size:24px;margin-bottom:8px">\u274C</div>' +
-          '<div style="font-size:14px;margin-bottom:4px">Failed to load dashboard</div>' +
-          '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px">' + err.message + '</div>' +
-          '<button id="_ds-x" style="padding:12px 24px;background:#475569;color:#fff;border:none;border-radius:10px;cursor:pointer">\u2715 Close</button></div>'
-        );
-        document.getElementById('_ds-x').onclick = function() { overlay.remove(); };
+      .catch(function(e) {
+        setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u274C</div><div style="font-size:14px;margin-bottom:4px">Failed: ' + e.message + '</div><div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Are you logged in?</div>' + btn('_ds-x', '#475569', '\u2715 Close') + '</div>');
+        document.getElementById('_ds-x').onclick = close;
       });
   }
 
-  function navigateToCourse(courseId) {
+  function goToCourse(id) {
     sessionStorage.setItem('_ds_auto', '1');
-    showStatus('Navigating to course...');
-    window.location.href = SEARCH_BASE + courseId + '?s=' + encodeURIComponent(STATUS_FILTER) + '&t=&g=';
+    showMsg('Navigating...');
+    window.location.href = SEARCH_BASE + id + '?s=' + encodeURIComponent(STATUS_FILTER) + '&t=&g=';
   }
 
   // ═════════════════════════════════════
-  // PHASE 2: Scrape search results
+  // PHASE 2: Scrape Search Results
   // ═════════════════════════════════════
   function runScraper() {
-    // Get page title from the status line at top
-    // Structure: "Status: Expected, Gender: FemaleOld (Back to Course) ..."
-    // Or from the <h2> or page heading
-    var pageTitle = '';
-    var h2 = document.querySelector('h2');
-    if (h2) pageTitle = h2.textContent.trim();
-    // Better: try to get from the "Back to Course" link context or URL
-    var backLink = document.querySelector('a[href^="/course/' + CENTRE_ID + '/"]');
-    if (backLink) {
-      pageTitle = backLink.textContent.trim() || pageTitle;
-    }
-    if (!pageTitle || pageTitle.length < 5) {
-      pageTitle = document.title.replace(' | Dīpi', '').trim();
-    }
+    // Get title
+    var title = '';
+    var backLink = document.querySelector('a[href*="Back to Course"], a[href^="/course/' + CENTRE_ID + '/"]');
+    if (backLink) title = backLink.textContent.trim();
+    if (!title) title = (document.querySelector('h2') || {}).textContent || '';
+    title = title.replace(/\s*\(Back to.*$/i, '').replace(/\s*\(Edit.*$/i, '').trim();
+    if (!title || title.length < 5) title = document.title.replace(' | Dīpi', '').trim();
 
-    showStatus('Starting scrape...');
+    showMsg('Starting...');
 
     (async function() {
       try {
-        // Step 1: Show All entries
-        // DataTable "Show X entries" is: select[name$="_length"]
-        showStatus('Loading all entries...');
+        // Show All entries
+        showMsg('Loading all entries...');
         var sel = document.querySelector('select[name$="_length"]');
         if (sel) {
           var hasAll = false;
@@ -240,87 +194,85 @@
           await wait(2500);
         }
 
-        // Step 2: Find main rows
-        // DataTable: table.dataTable tbody tr (excluding .child and .detail-row)
-        showStatus('Scanning table...');
-        var tbl = document.querySelector('table.dataTable') || document.querySelector('#DataTables_Table_0') || document.querySelector('table');
-        if (!tbl) { showStatus('Error: No table found!'); return; }
+        // ── Find main data rows ──
+        // VERIFIED: main rows have class "odd" or "even" (DataTable alternating)
+        // Detail rows have class "no-padding"
+        // Sub-content rows have empty className
+        var tbl = document.querySelector('table.dataTable') || document.querySelector('table');
+        if (!tbl) { showMsg('No table found!'); return; }
 
-        var trs = tbl.querySelector('tbody').querySelectorAll('tr');
+        var allTr = tbl.querySelector('tbody').querySelectorAll('tr');
         var rows = [];
-        for (var k = 0; k < trs.length; k++) {
-          var tr = trs[k];
-          if (tr.classList.contains('child') || tr.classList.contains('detail-row')) continue;
-          if (!tr.querySelector('td')) continue;
-          rows.push(tr);
+        for (var k = 0; k < allTr.length; k++) {
+          var cl = allTr[k].className;
+          // Main rows always have "odd" or "even" in className
+          if (cl.indexOf('odd') > -1 || cl.indexOf('even') > -1) {
+            rows.push(allTr[k]);
+          }
         }
 
-        if (rows.length === 0) {
-          showStatus('No applicants found on this page');
-          return;
-        }
+        if (rows.length === 0) { showMsg('No applicants found'); return; }
+        showMsg('Found ' + rows.length + ' applicants...');
 
-        showStatus('Found ' + rows.length + '. Expanding details...');
         var apps = [];
 
-        // Step 3: Expand each row and scrape
-        // Table columns: Detail | Applicant Name (PDF) | Edu/Occ/Comp/Desig + course info | Status | Type | Age | ChangeStatus | Action
         for (var i = 0; i < rows.length; i++) {
           var tr = rows[i];
-          updateProgress(i + 1, rows.length);
+          progress(i + 1, rows.length);
 
+          // ── Parse main row cells ──
+          // Columns: Detail | Name (PDF) | Edu/Occ/Comp/Desig + course | Status | Type | Age | ChangeStatus | Action
           var cells = tr.querySelectorAll('td');
           var nm = '', st = '', ty = '', ag = '';
 
           for (var c = 0; c < cells.length; c++) {
             var tx = cells[c].textContent.trim();
 
-            // Name cell: contains "(PDF)" text
+            // Name: contains "(PDF)"
             if (tx.indexOf('(PDF)') > -1) {
               nm = tx.replace(/\(PDF\)/g, '').replace(/\s+/g, ' ').trim();
             }
-            // Status cell: "Expected (OF1)" or "Confirmed (NM5)"
-            // Has format "Status\n(CODE)" - match but not inside a select
-            if (/^(Expected|Confirmed|Cancelled|Applied|Attended|Left)/i.test(tx) && !cells[c].querySelector('select')) {
-              st = tx.split('\n')[0].replace(/\(.*\)/, '').trim();
+            // Status: "Expected\n(OF1)" or "Confirmed\n(NM76)"
+            if (/^(Expected|Confirmed|Cancelled|Received|Attended|Left)/i.test(tx) && !cells[c].querySelector('select')) {
+              st = tx.replace(/\n.*/s, '').trim(); // take only first line before (code)
             }
-            // Type cell: "Old Female", "New Male", "Old\nFemale"
-            if (/^(Old|New)\s*(Male|Female)$/im.test(tx.replace(/\n/g, ' '))) {
-              ty = tx.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+            // Type: "Old\nFemale" or "New\nMale"
+            if (/^(Old|New)\n?(Male|Female)$/im.test(tx)) {
+              ty = tx.replace(/\n/g, ' ').trim();
             }
-            // Age cell: pure number 1-120
+            // Age: 2-3 digit number
             if (/^\d{1,3}$/.test(tx) && +tx > 5 && +tx < 120) {
               ag = tx;
             }
           }
 
-          // Click the expand (+) button in first cell
-          // The detail toggle is td:first-child or td.details-control
-          var expandCell = tr.querySelector('td:first-child');
-          var dt = '';
-          if (expandCell) {
-            expandCell.click();
+          // ── Expand row to get phone numbers ──
+          // Click first td (the + icon). Row gets "shown" class added.
+          var expandTd = tr.querySelector('td:first-child');
+          var phoneText = '';
+
+          if (expandTd) {
+            expandTd.click();
             await wait(700);
 
-            // Detail row appears as next sibling
-            // Format: "Address / H: 9536074750 M: 9536216216 O:  Email: mail@example.com"
+            // VERIFIED: detail row is next sibling with class "no-padding"
             var nx = tr.nextElementSibling;
-            if (nx && !nx.querySelector('td.details-control') && nx !== rows[i + 1]) {
-              dt = nx.textContent || '';
+            if (nx && nx.classList.contains('no-padding')) {
+              phoneText = nx.textContent || '';
             }
 
             // Collapse
-            expandCell.click();
+            expandTd.click();
             await wait(150);
           }
 
-          // Parse phones from detail text
-          // Pattern: "H: 9536074750 M: 9536216216 O:  Email: ..."
+          // ── Parse phone numbers ──
+          // Format: "Address / H: 9536074750 M: 9536216216 O:  Email: foo@bar.com"
           var mob = '', hom = '', ofc = '', eml = '';
-          var m1 = dt.match(/M:\s*(\d{7,15})/);
-          var m2 = dt.match(/H:\s*(\d{7,15})/);
-          var m3 = dt.match(/O:\s*(\d{7,15})/);
-          var m4 = dt.match(/Email:\s*([^\s,]+@[^\s,]+)/);
+          var m1 = phoneText.match(/M:\s*(\d{7,15})/);
+          var m2 = phoneText.match(/H:\s*(\d{7,15})/);
+          var m3 = phoneText.match(/O:\s*(\d{7,15})/);
+          var m4 = phoneText.match(/Email:\s*([^\s,]+@[^\s,]+)/);
           if (m1) mob = m1[1];
           if (m2) hom = m2[1];
           if (m3) ofc = m3[1];
@@ -331,10 +283,10 @@
           }
         }
 
-        showResults(apps, pageTitle);
+        showResults(apps, title);
 
       } catch (e) {
-        showStatus('Error: ' + e.message);
+        showMsg('Error: ' + e.message);
         console.error(e);
       }
     })();
@@ -342,20 +294,13 @@
 
   function wait(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
-  function updateProgress(cur, total) {
-    var pct = Math.round((cur / total) * 100);
-    setUI(
-      '<div style="text-align:center;padding:30px 0">' +
-      '<div style="font-size:14px;font-weight:600;margin-bottom:10px">\u{1F9D8} Reading ' + cur + ' / ' + total + '</div>' +
-      '<div style="background:#334155;border-radius:8px;height:8px;overflow:hidden;margin-bottom:6px"><div style="background:#3b82f6;height:100%;width:' + pct + '%;border-radius:8px;transition:width .3s"></div></div>' +
-      '<div style="font-size:11px;color:#94a3b8">' + pct + '%</div></div>'
-    );
+  function progress(cur, tot) {
+    var pct = Math.round((cur / tot) * 100);
+    setUI('<div style="text-align:center;padding:30px 0"><div style="font-size:14px;font-weight:600;margin-bottom:10px">\u{1F9D8} Reading ' + cur + ' / ' + tot + '</div><div style="background:#334155;border-radius:8px;height:8px;overflow:hidden;margin-bottom:6px"><div style="background:#3b82f6;height:100%;width:' + pct + '%;border-radius:8px;transition:width .3s"></div></div><div style="font-size:11px;color:#94a3b8">' + pct + '%</div></div>');
   }
 
   function showResults(apps, title) {
     var json = JSON.stringify(apps);
-
-    // Stats
     var nExp = 0, nConf = 0, nM = 0, nF = 0;
     apps.forEach(function(a) {
       if (/Expected/i.test(a.status)) nExp++;
@@ -364,43 +309,38 @@
       if (/Female/i.test(a.type)) nF++;
     });
 
+    var cleanTitle = title.replace(/Status:.*?,?\s*/i, '').replace(/Gender:.*$/i, '').trim();
+    if (!cleanTitle || cleanTitle.length < 5) cleanTitle = 'Dhamma Sudha Course';
+
     setUI(
       '<div style="text-align:center;padding:16px 0">' +
       '<div style="font-size:24px;margin-bottom:6px">\u2705</div>' +
       '<div style="font-size:17px;font-weight:700">' + apps.length + ' applicants scraped</div>' +
-      '<div style="font-size:11px;color:#94a3b8;margin-top:2px;margin-bottom:14px">' + title + '</div>' +
-
+      '<div style="font-size:11px;color:#94a3b8;margin-top:2px;margin-bottom:14px">' + cleanTitle + '</div>' +
       '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:18px">' +
-      badge('Expected', nExp, '#f59e0b') + badge('Confirmed', nConf, '#22c55e') +
-      badge('Male', nM, '#3b82f6') + badge('Female', nF, '#a855f7') + '</div>' +
-
-      '<button id="_ds-tracker" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">\u{1F4F1} Open in Call Tracker</button>' +
-      '<button id="_ds-copy" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">\u{1F4CB} Copy Data to Clipboard</button>' +
-      '<button id="_ds-csv" style="display:block;width:100%;padding:14px;margin-bottom:8px;background:#9333ea;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">\u{1F4CA} Download CSV</button>' +
-      '<button id="_ds-x" style="display:block;width:100%;padding:12px;background:transparent;color:#94a3b8;border:1px solid #475569;border-radius:10px;font-size:14px;cursor:pointer">\u2715 Close</button>' +
+      bdg('Expected', nExp, '#f59e0b') + bdg('Confirmed', nConf, '#22c55e') + bdg('Male', nM, '#3b82f6') + bdg('Female', nF, '#a855f7') + '</div>' +
+      btn('_ds-t', '#3b82f6', '\u{1F4F1} Open in Call Tracker') +
+      btn('_ds-cp', '#16a34a', '\u{1F4CB} Copy Data') +
+      btn('_ds-csv', '#9333ea', '\u{1F4CA} Download CSV') +
+      btn('_ds-x', 'transparent', '\u2715 Close', '#94a3b8', '1px solid #475569') +
       '</div>'
     );
 
-    // Clean title for tracker
-    var cleanTitle = title.replace(/_/g, ' ').replace(/Status:.*?,?\s*/i, '').replace(/Gender:.*$/i, '').trim();
-    if (!cleanTitle || cleanTitle.length < 5) cleanTitle = 'Dhamma Sudha Course';
-
-    document.getElementById('_ds-tracker').onclick = function() {
+    document.getElementById('_ds-t').onclick = function() {
       var data = { apps: apps, title: cleanTitle };
       var enc = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
       if (PWA_URL) {
         window.open(PWA_URL + '/index.html#dipi=' + enc, '_blank');
       } else {
-        // No PWA URL configured — copy to clipboard instead
         navigator.clipboard.writeText(JSON.stringify(data)).then(function() {
-          alert('PWA URL not set. Data copied to clipboard.\n\nOpen your Call Tracker app and use "Paste from DIPI".');
+          alert('PWA URL not set.\nData copied \u2014 open Call Tracker \u2192 Paste from DIPI');
         });
       }
     };
 
-    document.getElementById('_ds-copy').onclick = function() {
+    document.getElementById('_ds-cp').onclick = function() {
       navigator.clipboard.writeText(json).then(function() {
-        alert('Copied ' + apps.length + ' applicants!\n\nOpen Call Tracker \u2192 Paste from DIPI');
+        alert('Copied ' + apps.length + ' applicants!\nOpen Call Tracker \u2192 Paste from DIPI');
       });
     };
 
@@ -409,19 +349,18 @@
       apps.forEach(function(a, i) {
         csv += (i + 1) + ',"' + a.name + '",' + a.mobile + ',' + a.home + ',' + a.office + ',' + a.email + ',"' + a.status + '","' + a.type + '",' + a.age + '\n';
       });
-      var blob = new Blob([csv], { type: 'text/csv' });
-      var url = URL.createObjectURL(blob);
-      var link = document.createElement('a');
-      link.href = url; link.download = 'dipi_' + cleanTitle.replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      var b = new Blob([csv], { type: 'text/csv' });
+      var u = URL.createObjectURL(b);
+      var l = document.createElement('a');
+      l.href = u; l.download = 'dipi_' + cleanTitle.replace(/[^a-zA-Z0-9]/g, '_') + '.csv'; l.click();
+      URL.revokeObjectURL(u);
     };
 
-    document.getElementById('_ds-x').onclick = function() { overlay.remove(); };
+    document.getElementById('_ds-x').onclick = close;
   }
 
-  function badge(label, count, color) {
-    return '<div style="background:' + color + '22;color:' + color + ';padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600">' + label + ' ' + count + '</div>';
+  function bdg(label, n, color) {
+    return '<div style="background:' + color + '22;color:' + color + ';padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600">' + label + ' ' + n + '</div>';
   }
 
 })();
