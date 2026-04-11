@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
-// DIPI Scraper v5
-// - Batch expand via jQuery trigger (5s vs 80s)
-// - Group codes: NM/OM/SM/NF/OF/SF parsed from status "(NM76)"
+// DIPI Scraper v6
+// - Batch expand via jQuery trigger
+// - Group codes: NM/OM/SM/NF/OF/SF from status "(NM76)"
+// - AID captured from /app/{id}/ links (PDF/edit)
 // - Course dates passed to tracker
 // ═══════════════════════════════════════════════════════════════
 
@@ -122,21 +123,16 @@
   // PHASE 2: Scrape (batch expand)
   // ═════════════════════════════════════
   function runScraper() {
-    // Extract course title and dates
-    var title = '', dates = '';
+    var title = '', dates = '', courseType = '';
     var backLink = document.querySelector('a[href^="/course/' + CID + '/"]');
     if (backLink) title = backLink.textContent.trim();
     if (!title) title = (document.querySelector('h2') || {}).textContent || '';
     title = title.replace(/\s*\(Back to.*$/i, '').replace(/\s*\(Edit.*$/i, '').trim();
 
-    // Parse dates from title: "Dhamma Sudha / 10 Day / 2026 / 15th-Apr to 26th-Apr"
     var dm = title.match(/(\d{1,2}\w*-\w+)\s+to\s+(\d{1,2}\w*-\w+)/i);
     if (dm) dates = dm[1] + ' to ' + dm[2];
     var ym = title.match(/\/\s*(\d{4})\s*\//);
     if (ym && dates) dates = dates + ' ' + ym[1];
-
-    // Course type
-    var courseType = '';
     var tm = title.match(/\/\s*(10 Day|3 Day|STP|SPL|20d|30d|45d|60d)\s*\//i);
     if (tm) courseType = tm[1];
 
@@ -144,7 +140,7 @@
 
     (async function() {
       try {
-        // Step 1: Show All
+        // Show All
         msg('Loading all entries...');
         var sel = document.querySelector('select[name$="_length"]');
         if (sel) {
@@ -157,7 +153,6 @@
           await wait(2500);
         }
 
-        // Step 2: Count main rows
         var tbl = document.querySelector('table.dataTable') || document.querySelector('table');
         if (!tbl) { msg('No table found!'); return; }
 
@@ -174,47 +169,55 @@
         var rows = getMainRows();
         if (!rows.length) { msg('No applicants found'); return; }
 
-        // Step 3: BATCH EXPAND — click all at once via jQuery
+        // Batch expand
         msg('Expanding all ' + rows.length + ' rows...');
-
-        // Check if jQuery is available (DIPI uses it)
         if (typeof jQuery !== 'undefined') {
           jQuery('table.dataTable tbody tr.odd td:first-child, table.dataTable tbody tr.even td:first-child').trigger('click');
         } else {
-          // Fallback: click each first-child td
-          rows.forEach(function(tr) {
-            var td = tr.querySelector('td:first-child');
-            if (td) td.click();
-          });
+          rows.forEach(function(tr) { var td = tr.querySelector('td:first-child'); if (td) td.click(); });
         }
 
-        // Wait for all details to render
-        // 115 rows need a bit more time than 10
         var waitTime = Math.max(3000, Math.min(rows.length * 50, 8000));
         msg('Waiting for ' + rows.length + ' details to load...');
         await wait(waitTime);
 
-        // Step 4: Scrape everything in one pass
+        // Scrape
         msg('Reading data...');
         var apps = [];
-        rows = getMainRows(); // re-query in case DOM changed
+        rows = getMainRows();
 
         for (var i = 0; i < rows.length; i++) {
           var tr = rows[i];
           var cells = tr.querySelectorAll('td');
-          var nm = '', st = '', ty = '', ag = '', groupCode = '';
+          var nm = '', st = '', ty = '', ag = '', groupCode = '', aid = '';
+
+          // ── Extract AID from links in the main row ──
+          // Look for href containing /app/{digits}/ (edit link, PDF link, etc.)
+          var allLinks = tr.querySelectorAll('a[href]');
+          for (var li = 0; li < allLinks.length; li++) {
+            var href = allLinks[li].getAttribute('href') || '';
+            var aidMatch = href.match(/\/app\/(\d+)/);
+            if (aidMatch) { aid = aidMatch[1]; break; }
+          }
 
           for (var c = 0; c < cells.length; c++) {
             var tx = cells[c].textContent.trim();
-
             if (tx.indexOf('(PDF)') > -1) {
               nm = tx.replace(/\(PDF\)/g, '').replace(/\s+/g, ' ').trim();
+              // Also check links inside this cell for AID
+              if (!aid) {
+                var cellLinks = cells[c].querySelectorAll('a[href]');
+                for (var cl2 = 0; cl2 < cellLinks.length; cl2++) {
+                  var ch = cellLinks[cl2].getAttribute('href') || '';
+                  var cm = ch.match(/\/app\/(\d+)/);
+                  if (cm) { aid = cm[1]; break; }
+                }
+              }
             }
-            // Status: "Confirmed\n(NM76)" → status="Confirmed", group="NM"
             if (/^(Expected|Confirmed|Cancelled|Received|Attended|Left)/i.test(tx) && !cells[c].querySelector('select')) {
               st = tx.replace(/\n.*/s, '').trim();
               var gm = tx.match(/\(([A-Z]{2})\d+\)/);
-              if (gm) groupCode = gm[1]; // NM, OM, SM, NF, OF, SF
+              if (gm) groupCode = gm[1];
             }
             if (/^(Old|New)\n?(Male|Female)$/im.test(tx)) {
               ty = tx.replace(/\n/g, ' ').trim();
@@ -224,11 +227,20 @@
             }
           }
 
-          // Detail row: tr.no-padding immediately after
+          // Detail row
           var phoneText = '';
           var nx = tr.nextElementSibling;
           if (nx && nx.classList.contains('no-padding')) {
             phoneText = nx.textContent || '';
+            // Also search detail row for AID links if not found yet
+            if (!aid) {
+              var detailLinks = nx.querySelectorAll('a[href]');
+              for (var dl = 0; dl < detailLinks.length; dl++) {
+                var dh = detailLinks[dl].getAttribute('href') || '';
+                var dm2 = dh.match(/\/app\/(\d+)/);
+                if (dm2) { aid = dm2[1]; break; }
+              }
+            }
           }
 
           var mob = '', hom = '', ofc = '', eml = '';
@@ -241,10 +253,8 @@
           if (m3) ofc = m3[1];
           if (m4) eml = m4[1];
 
-          // Derive group from code or type
-          var group = groupCode; // NM, OM, SM, NF, OF, SF
+          var group = groupCode;
           if (!group && ty) {
-            // Fallback from type text
             if (/New.*Male/i.test(ty)) group = 'NM';
             else if (/Old.*Male/i.test(ty)) group = 'OM';
             else if (/New.*Female/i.test(ty)) group = 'NF';
@@ -252,11 +262,11 @@
           }
 
           if (nm) {
-            apps.push({ name: nm, mobile: mob, home: hom, office: ofc, email: eml, status: st, type: ty, age: ag, group: group });
+            apps.push({ name: nm, mobile: mob, home: hom, office: ofc, email: eml, status: st, type: ty, age: ag, group: group, aid: aid });
           }
         }
 
-        // Step 5: Collapse all back
+        // Collapse all
         if (typeof jQuery !== 'undefined') {
           jQuery('table.dataTable tbody tr.shown td:first-child').trigger('click');
         }
@@ -272,10 +282,11 @@
 
   function showResults(apps, title, dates, courseType) {
     var json = JSON.stringify(apps);
-    var g = { NM: 0, OM: 0, SM: 0, NF: 0, OF: 0, SF: 0, other: 0 };
-    apps.forEach(function(a) { if (g[a.group] !== undefined) g[a.group]++; else g.other++; });
+    var g = { NM: 0, OM: 0, SM: 0, NF: 0, OF: 0, SF: 0 };
+    apps.forEach(function(a) { if (g[a.group] !== undefined) g[a.group]++; });
     var nExp = apps.filter(function(a) { return /Expected/i.test(a.status); }).length;
     var nConf = apps.filter(function(a) { return /Confirmed/i.test(a.status); }).length;
+    var withAid = apps.filter(function(a) { return a.aid; }).length;
 
     var cleanTitle = title.replace(/Status:.*?,?\s*/i, '').replace(/Gender:.*$/i, '').trim() || 'Dhamma Sudha Course';
 
@@ -285,6 +296,7 @@
       '<div style="font-size:17px;font-weight:700">' + apps.length + ' applicants scraped</div>' +
       '<div style="font-size:12px;color:#94a3b8;margin-top:2px">' + cleanTitle + '</div>' +
       (dates ? '<div style="font-size:11px;color:#60a5fa;margin-top:2px">\u{1F4C5} ' + dates + '</div>' : '') +
+      '<div style="font-size:10px;color:#64748b;margin-top:4px">AIDs captured: ' + withAid + '/' + apps.length + '</div>' +
       '<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:14px 0">' +
       bdg('Exp', nExp, '#f59e0b') + bdg('Conf', nConf, '#22c55e') +
       bdg('NM', g.NM, '#3b82f6') + bdg('OM', g.OM, '#0ea5e9') + bdg('SM', g.SM, '#06b6d4') +
@@ -293,6 +305,7 @@
       B('_ds-t', '#3b82f6', '\u{1F4F1} Open in Call Tracker') +
       B('_ds-cp', '#16a34a', '\u{1F4CB} Copy Data') +
       B('_ds-csv', '#9333ea', '\u{1F4CA} Download CSV') +
+      B('_ds-aid', '#ea580c', '\u{1F4E4} Export AID:Phone (for script)') +
       B('_ds-x', 'transparent', '\u2715 Close', '#94a3b8', '1px solid #475569') +
       '</div>'
     );
@@ -305,10 +318,18 @@
     };
     document.getElementById('_ds-cp').onclick = function() { navigator.clipboard.writeText(json).then(function() { alert('Copied ' + apps.length + '!\nTracker \u2192 Paste from DIPI'); }); };
     document.getElementById('_ds-csv').onclick = function() {
-      var csv = 'S.No,Name,Mobile,Home,Office,Email,Status,Group,Type,Age\n';
-      apps.forEach(function(a, i) { csv += (i + 1) + ',"' + a.name + '",' + a.mobile + ',' + a.home + ',' + a.office + ',' + a.email + ',"' + a.status + '",' + a.group + ',"' + a.type + '",' + a.age + '\n'; });
+      var csv = 'S.No,Name,AID,Mobile,Home,Office,Email,Status,Group,Type,Age\n';
+      apps.forEach(function(a, i) { csv += (i + 1) + ',"' + a.name + '",' + a.aid + ',' + a.mobile + ',' + a.home + ',' + a.office + ',' + a.email + ',"' + a.status + '",' + a.group + ',"' + a.type + '",' + a.age + '\n'; });
       var b = new Blob([csv], { type: 'text/csv' }); var u = URL.createObjectURL(b);
       var l = document.createElement('a'); l.href = u; l.download = 'dipi_' + cleanTitle.replace(/[^a-zA-Z0-9]/g, '_') + '.csv'; l.click();
+    };
+    // Export AID:PHONE file for bash script
+    document.getElementById('_ds-aid').onclick = function() {
+      var lines = apps.filter(function(a) { return a.aid && a.mobile; }).map(function(a) { return a.aid + ':' + a.mobile; });
+      var txt = lines.join('\n') + '\n';
+      var b = new Blob([txt], { type: 'text/plain' }); var u = URL.createObjectURL(b);
+      var l = document.createElement('a'); l.href = u; l.download = 'aid_mobilenumber.txt'; l.click();
+      alert('Exported ' + lines.length + ' entries.\nUse with improved_aid.sh');
     };
     document.getElementById('_ds-x').onclick = close;
   }
