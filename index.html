@@ -228,6 +228,7 @@ async function importDIPI(dipiArray, titleHint, dates, courseType) {
     age: d.age || "",
     city: "",
     group: d.group || "",
+    aid: d.aid || "",
     status: "pending", attempts: 0, lastAttempt: null, notes: "",
   })).filter(a => a.name);
   apps.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
@@ -314,12 +315,12 @@ function exportWhatsApp() {
 }
 function exportExcel() {
   const data = state.applicants.map((a,i) => ({
-    "S.No": i+1, Name: a.name, Mobile: a.mobile, Home: a.home,
+    "S.No": i+1, Name: a.name, AID: a.aid || "", Group: a.group || "", Mobile: a.mobile, Home: a.home,
     Status: STATUSES[a.status]?.label || a.status, Attempts: a.attempts,
     "Last Attempt": a.lastAttempt ? new Date(a.lastAttempt).toLocaleString("en-IN") : "", Notes: a.notes,
   }));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = [{wch:5},{wch:25},{wch:16},{wch:16},{wch:12},{wch:9},{wch:20},{wch:30}];
+  ws["!cols"] = [{wch:5},{wch:25},{wch:10},{wch:5},{wch:16},{wch:16},{wch:12},{wch:9},{wch:20},{wch:30}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Results");
   XLSX.writeFile(wb, state.courseTitle.replace(/[^a-zA-Z0-9]/g,"_") + "_results.xlsx");
@@ -348,6 +349,64 @@ function exportPDF() {
   <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
   w.document.close();
   setState({ showExport: false });
+}
+
+// Export AID:PHONE for bash script
+function exportAIDPhone() {
+  const lines = state.applicants
+    .filter(a => a.aid && a.mobile)
+    .map(a => a.aid + ':' + a.mobile.replace(/^\+91/, ''));
+  if (lines.length === 0) {
+    showToast("No AIDs found — scrape from DIPI first");
+    setState({ showExport: false });
+    return;
+  }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'aid_mobilenumber.txt'; a.click();
+  URL.revokeObjectURL(url);
+  showToast("Exported " + lines.length + " AID:Phone pairs");
+  setState({ showExport: false });
+}
+
+// WhatsApp bulk: opens WhatsApp for each pending applicant one by one
+function whatsappBulk() {
+  const pending = state.applicants.filter(a =>
+    ['pending', 'no_answer', 'callback'].includes(a.status) && (a.mobile || a.home)
+  );
+  if (pending.length === 0) {
+    showToast("No pending applicants with phone numbers");
+    setState({ showExport: false });
+    return;
+  }
+  const msg = "This will open WhatsApp for " + pending.length + " pending applicants one at a time.\n\nYou send each message manually, then come back to open the next.\n\nProceed?";
+  if (!confirm(msg)) { setState({ showExport: false }); return; }
+  setState({ showExport: false });
+
+  let idx = 0;
+  function sendNext() {
+    if (idx >= pending.length) { showToast("Done! Sent to " + pending.length); return; }
+    const a = pending[idx];
+    const phone = (a.mobile || a.home || '').replace(/^\+/, '').replace(/\D/g, '');
+    const text = encodeURIComponent("नमस्ते " + a.name.split(' ')[0] + " जी, आपका विपश्यना " + (state.courseType || '') + " शिविर " + (state.courseDates || '') + " को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।");
+    window.open("https://wa.me/" + phone + "?text=" + text, "_blank");
+    idx++;
+    showToast(idx + "/" + pending.length + " — " + a.name.split(' ')[0]);
+    // Wait for user to come back — show a "Next" button
+    setTimeout(function() {
+      const bar = document.createElement('div');
+      bar.id = '_wa-next';
+      bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#1e293b;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:center;box-shadow:0 -2px 12px rgba(0,0,0,.3)';
+      bar.innerHTML = '<span style="color:#94a3b8;font-size:12px">' + idx + '/' + pending.length + '</span><button id="_wa-go" style="background:#16a34a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">💬 Next: ' + (pending[idx] ? pending[idx].name.split(' ')[0] : 'Done') + '</button><button id="_wa-stop" style="background:#475569;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer">Stop</button>';
+      var oldBar = document.getElementById('_wa-next');
+      if (oldBar) oldBar.remove();
+      document.body.appendChild(bar);
+      document.getElementById('_wa-go').onclick = function() { bar.remove(); sendNext(); };
+      document.getElementById('_wa-stop').onclick = function() { bar.remove(); showToast("Stopped at " + idx + "/" + pending.length); };
+    }, 500);
+  }
+  sendNext();
 }
 
 // ── Render ──
@@ -437,6 +496,11 @@ function render() {
       if (a.mobile) phoneBtns.push(`<a href="tel:${a.mobile}" class="phone-btn phone-mobile" data-call="${a.id}">📱 ${a.mobile}</a>`);
       if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${a.home}" class="phone-btn phone-home" data-call="${a.id}">🏠 ${a.home}</a>`);
 
+      // WhatsApp button with pre-filled Hindi message
+      const waPhone = (a.mobile || a.home || '').replace(/^\+/, '');
+      const waMsg = encodeURIComponent(`नमस्ते ${a.name.split(' ')[0]} जी, आपका विपश्यना ${state.courseType || ''} शिविर ${state.courseDates || ''} को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।`);
+      if (waPhone) phoneBtns.push(`<a href="https://wa.me/${waPhone.replace(/\D/g,'')}?text=${waMsg}" target="_blank" class="phone-btn" style="background:#dcfce7;border:1px solid #86efac;color:#15803d" data-call="${a.id}">💬 WhatsApp</a>`);
+
       const statusBtns = Object.entries(STATUSES).filter(([k]) => k !== "pending").map(([k,v]) =>
         `<button class="status-btn" data-mark="${a.id}|${k}" style="border:${a.status===k?"2px solid "+v.color:"1px solid #e2e8f0"};background:${a.status===k?v.bg:"#fff"};color:${a.status===k?v.color:"#64748b"}">${v.icon}<br>${v.label}</button>`
       ).join("");
@@ -475,6 +539,8 @@ function render() {
         <button id="expWA">📋 Copy for WhatsApp</button>
         <button id="expXL">📊 Download Excel</button>
         <button id="expPDF">🖨️ Print / PDF</button>
+        <button id="expAID">📤 Export AID:Phone (script)</button>
+        <button id="expWABulk">💬 WhatsApp All Pending</button>
       </div>` : ""}
       ${Object.keys(groupStats).length > 0 ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join("")}</div>` : ""}
       <div class="stats">${statPills.join("")}</div>
@@ -488,6 +554,8 @@ function render() {
   document.getElementById("expWA")?.addEventListener("click", exportWhatsApp);
   document.getElementById("expXL")?.addEventListener("click", exportExcel);
   document.getElementById("expPDF")?.addEventListener("click", exportPDF);
+  document.getElementById("expAID")?.addEventListener("click", exportAIDPhone);
+  document.getElementById("expWABulk")?.addEventListener("click", whatsappBulk);
   document.getElementById("newFile")?.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
   document.getElementById("searchBox")?.addEventListener("input", e => { state.search = e.target.value; render(); });
 
