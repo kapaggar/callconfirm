@@ -165,6 +165,81 @@ function showToast(msg) {
   render();
 }
 
+// ── DIPI Letter System ──
+// Replicates PHP's simple_crypt: AES-256-CBC with known key/IV → double base64
+const DIPI_KEY_STR = '9bd6ed6b014206c76f7a7e6b49d535e9'; // first 32 bytes of full key
+const DIPI_IV_STR = '60b79f716fb5172a'; // 16 bytes
+const DIPI_MSG_TYPE = 6421; // FULL_INFO
+const LETTER_BASE_URL = 'https://applicant.vridhamma.org/l.php?a=';
+
+async function computeAuthCode(aid, msgType) {
+  msgType = msgType || DIPI_MSG_TYPE;
+  const plaintext = aid + '-' + msgType;
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode(DIPI_KEY_STR);
+  const ivBytes = enc.encode(DIPI_IV_STR);
+  const dataBytes = enc.encode(plaintext);
+  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC' }, false, ['encrypt']);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv: ivBytes }, cryptoKey, dataBytes);
+  // Double base64 to match PHP: base64_encode(openssl_encrypt(...))
+  const base64_1 = btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+  const base64_2 = btoa(base64_1);
+  return base64_2;
+}
+
+async function fetchPersonalizedMessage(aid) {
+  if (!aid) return null;
+  try {
+    const authCode = await computeAuthCode(aid);
+    const url = LETTER_BASE_URL + encodeURIComponent(authCode);
+    const resp = await fetch(url, { mode: 'cors' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    // Convert HTML to plain text (like pandoc -f html -t markdown | tail -n +3)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    // Remove script/style tags
+    doc.querySelectorAll('script, style, head').forEach(el => el.remove());
+    // Get text content, clean up
+    let text = (doc.body.innerText || doc.body.textContent || '').trim();
+    // Clean excessive whitespace
+    text = text.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+/g, ' ').trim();
+    // Skip first 2 lines (like tail -n +3 in the bash script)
+    const lines = text.split('\n');
+    if (lines.length > 2) text = lines.slice(2).join('\n').trim();
+    return text;
+  } catch (e) {
+    console.warn('Letter fetch failed (likely CORS):', e.message);
+    return null;
+  }
+}
+
+// Send WhatsApp with personalized or fallback message
+async function sendWhatsAppForApplicant(appId) {
+  const a = state.applicants.find(x => x.id === appId);
+  if (!a) return;
+  const phone = (a.mobile || a.home || '').replace(/^\+/, '').replace(/\D/g, '');
+  if (!phone) { showToast('No phone number'); return; }
+
+  logAttempt(appId);
+
+  // Try personalized letter first
+  if (a.aid) {
+    showToast('Fetching letter for ' + a.name.split(' ')[0] + '...');
+    const letter = await fetchPersonalizedMessage(a.aid);
+    if (letter) {
+      window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(letter), '_blank');
+      showToast('Personalized message ready!');
+      return;
+    }
+  }
+
+  // Fallback: generic Hindi template
+  const fallback = 'नमस्ते ' + a.name.split(' ')[0] + ' जी, आपका विपश्यना ' + (state.courseType || '') + ' शिविर ' + (state.courseDates || '') + ' को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।';
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(fallback), '_blank');
+  showToast(a.aid ? 'Letter fetch failed — sent generic' : 'No AID — sent generic');
+}
+
 // ── Format phone ──
 function fmtPhone(num) {
   if (!num) return "";
@@ -370,7 +445,7 @@ function exportAIDPhone() {
   setState({ showExport: false });
 }
 
-// WhatsApp bulk: opens WhatsApp for each pending applicant one by one
+// WhatsApp bulk: opens WhatsApp for each pending applicant with personalized DIPI letter
 function whatsappBulk() {
   const pending = state.applicants.filter(a =>
     ['pending', 'no_answer', 'callback'].includes(a.status) && (a.mobile || a.home)
@@ -380,20 +455,39 @@ function whatsappBulk() {
     setState({ showExport: false });
     return;
   }
-  const msg = "This will open WhatsApp for " + pending.length + " pending applicants one at a time.\n\nYou send each message manually, then come back to open the next.\n\nProceed?";
+  const hasAids = pending.filter(a => a.aid).length;
+  const msg = "WhatsApp " + pending.length + " pending applicants.\n\n" +
+    (hasAids ? hasAids + " have AIDs — will fetch personalized DIPI letters.\n" : "No AIDs — will use generic Hindi message.\n") +
+    "\nYou send each manually, then tap Next.\n\nProceed?";
   if (!confirm(msg)) { setState({ showExport: false }); return; }
   setState({ showExport: false });
 
   let idx = 0;
-  function sendNext() {
-    if (idx >= pending.length) { showToast("Done! Sent to " + pending.length); return; }
+  async function sendNext() {
+    if (idx >= pending.length) {
+      var oldBar = document.getElementById('_wa-next');
+      if (oldBar) oldBar.remove();
+      showToast("Done! " + pending.length + " messages opened");
+      return;
+    }
     const a = pending[idx];
     const phone = (a.mobile || a.home || '').replace(/^\+/, '').replace(/\D/g, '');
-    const text = encodeURIComponent("नमस्ते " + a.name.split(' ')[0] + " जी, आपका विपश्यना " + (state.courseType || '') + " शिविर " + (state.courseDates || '') + " को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।");
-    window.open("https://wa.me/" + phone + "?text=" + text, "_blank");
+
+    // Try personalized letter
+    let text = null;
+    if (a.aid) {
+      showToast("Fetching letter for " + a.name.split(' ')[0] + "...");
+      text = await fetchPersonalizedMessage(a.aid);
+    }
+    // Fallback to generic
+    if (!text) {
+      text = "नमस्ते " + a.name.split(' ')[0] + " जी, आपका विपश्यना " + (state.courseType || '') + " शिविर " + (state.courseDates || '') + " को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।";
+    }
+
+    window.open("https://wa.me/" + phone + "?text=" + encodeURIComponent(text), "_blank");
     idx++;
     showToast(idx + "/" + pending.length + " — " + a.name.split(' ')[0]);
-    // Wait for user to come back — show a "Next" button
+
     setTimeout(function() {
       const bar = document.createElement('div');
       bar.id = '_wa-next';
@@ -496,10 +590,9 @@ function render() {
       if (a.mobile) phoneBtns.push(`<a href="tel:${a.mobile}" class="phone-btn phone-mobile" data-call="${a.id}">📱 ${a.mobile}</a>`);
       if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${a.home}" class="phone-btn phone-home" data-call="${a.id}">🏠 ${a.home}</a>`);
 
-      // WhatsApp button with pre-filled Hindi message
+      // WhatsApp button — fetches personalized DIPI letter on tap
       const waPhone = (a.mobile || a.home || '').replace(/^\+/, '');
-      const waMsg = encodeURIComponent(`नमस्ते ${a.name.split(' ')[0]} जी, आपका विपश्यना ${state.courseType || ''} शिविर ${state.courseDates || ''} को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।`);
-      if (waPhone) phoneBtns.push(`<a href="https://wa.me/${waPhone.replace(/\D/g,'')}?text=${waMsg}" target="_blank" class="phone-btn" style="background:#dcfce7;border:1px solid #86efac;color:#15803d" data-call="${a.id}">💬 WhatsApp</a>`);
+      if (waPhone) phoneBtns.push(`<button class="phone-btn" style="background:#dcfce7;border:1px solid #86efac;color:#15803d;cursor:pointer" data-wa="${a.id}">💬 WhatsApp${a.aid ? ' ✉' : ''}</button>`);
 
       const statusBtns = Object.entries(STATUSES).filter(([k]) => k !== "pending").map(([k,v]) =>
         `<button class="status-btn" data-mark="${a.id}|${k}" style="border:${a.status===k?"2px solid "+v.color:"1px solid #e2e8f0"};background:${a.status===k?v.bg:"#fff"};color:${a.status===k?v.color:"#64748b"}">${v.icon}<br>${v.label}</button>`
@@ -571,6 +664,10 @@ function render() {
     setState({ expandedId: state.expandedId === b.dataset.toggle ? null : b.dataset.toggle });
   }));
   document.querySelectorAll("[data-call]").forEach(b => b.addEventListener("click", () => logAttempt(b.dataset.call)));
+  document.querySelectorAll("[data-wa]").forEach(b => b.addEventListener("click", e => {
+    e.stopPropagation();
+    sendWhatsAppForApplicant(b.dataset.wa);
+  }));
   document.querySelectorAll("[data-mark]").forEach(b => b.addEventListener("click", e => {
     e.stopPropagation();
     const [id, st] = b.dataset.mark.split("|");
