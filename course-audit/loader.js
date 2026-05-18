@@ -276,7 +276,7 @@ ${lines}`;
     lines.push(`Audit: ${courseLabel}`);
     lines.push(`${courseKey} — ${mapped.length} rows, ${activeCount} active`);
     lines.push('');
-    lines.push(`🔴 ${findings.hardErrors.length} hard / 🟡 ${findings.safety.length} safety / 🔵 ${findings.crossCourse.length} cross-course`);
+    lines.push(`Issues: ${findings.hardErrors.length} hard | ${findings.safety.length} safety | ${findings.crossCourse.length} cross-course`);
     if (findings.hardErrors.length) {
       lines.push('');
       lines.push('Top hard errors:');
@@ -399,8 +399,8 @@ ${lines}`;
     <details><summary><span class="sec-min">Sensitive field counts</span></summary><pre>${JSON.stringify(findings.sensitiveCounts,null,2)}</pre></details>
     <details><summary><span class="sec-min">Cache</span></summary><div class="cache">${cached || '(empty)'}</div></details>
 
-    <!-- WhatsApp modal (hidden until opened) -->
-    <div id="ca-wa-modal" class="wa-modal" hidden>
+    <!-- WhatsApp modal (hidden via CSS until .wa-shown is added) -->
+    <div id="ca-wa-modal" class="wa-modal">
       <div class="wa-card">
         <div class="wa-title">Send course summary via WhatsApp</div>
         <div class="wa-hint">Opens WhatsApp Web/desktop pre-filled. You confirm and send.</div>
@@ -485,7 +485,10 @@ ${lines}`;
     .cache { font-size:11px; color:#666; margin:6px 0; }
 
     /* WhatsApp modal */
-    .wa-modal { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2147483647; display:flex; align-items:center; justify-content:center; }
+    .wa-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2147483647; align-items:center; justify-content:center; }
+    .wa-modal.wa-shown { display:flex; }
+    .wa-section[hidden] { display:none; }
+    .wa-err[hidden] { display:none; }
     .wa-card { background:#fff; border-radius:8px; box-shadow:0 8px 32px rgba(0,0,0,.3); padding:18px; width:min(440px, 92%); max-height:90vh; overflow:auto; }
     .wa-title { font-size:16px; font-weight:600; margin-bottom:4px; }
     .wa-hint { font-size:11px; color:#666; margin-bottom:12px; }
@@ -542,7 +545,7 @@ ${lines}`;
     }
 
     function openModal() {
-      modal.hidden = false;
+      modal.classList.add('wa-shown');
       preview.textContent = summary;
       const url = `https://wa.me/0?text=${encodeURIComponent(summary)}`;
       charcount.textContent = `${summary.length} chars (URL ${url.length}, wa.me limit ~4000)`;
@@ -555,7 +558,7 @@ ${lines}`;
       renderRecipients();
       setTimeout(() => numIn.focus(), 50);
     }
-    function closeModal() { modal.hidden = true; }
+    function closeModal() { modal.classList.remove('wa-shown'); }
 
     function sendTo(e164) {
       pushRecent(e164);
@@ -659,6 +662,7 @@ ${lines}`;
       border-left:2px solid #333; z-index:2147483647; background:#fff;
       box-shadow:-4px 0 24px rgba(0,0,0,.3); color-scheme:light;`;
     iframe.srcdoc = `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
 <base target="_top"><meta name="color-scheme" content="light">
 <style>${PANEL_CSS}</style>
 </head><body>${buildPanelHTML()}</body></html>`;
