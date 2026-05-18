@@ -209,11 +209,60 @@
       .map(({i,r}) => ({ i, r, kept: sensFields.filter(f => fieldIsMeaningful(f, r[f], r)) }))
       .filter(({kept}) => kept.length > 0);
 
-    const lines = rows.map(({i,r,kept}) => {
-      const fields = kept.map(f => `${f}: ${String(r[f]).replace(/\s+/g,' ').trim()}`).join(' | ');
-      const sevak = /\(Sevak\)/.test(r.Name) ? ' [SEVAK]' : '';
-      return `r${i} aid=${r._aid} ${r.Name.replace(' (Sevak)','')}${sevak} (${r.Gender}, age ${r.Age}) -- ${fields}`;
-    }).join('\n');
+    // Sort key: Conf No prefix group (SM/SF/OM/OF/NM/NF) then by name
+    const groupOrder = ['SM','OM','NM','SF','OF','NF']; // males first, then females, sevak→old→new
+    const groupOf = (confNo) => {
+      const c = String(confNo || '').trim().toUpperCase();
+      const m = c.match(/^([A-Z]{2})/);
+      return (m && groupOrder.includes(m[1])) ? m[1] : 'ZZ';
+    };
+    const numOf = (confNo) => {
+      const m = String(confNo || '').match(/\d+/);
+      return m ? parseInt(m[0], 10) : 9999;
+    };
+
+    // Two big buckets: male (SM, OM, NM) and female (SF, OF, NF)
+    const maleRows = [];
+    const femaleRows = [];
+    rows.forEach(rec => {
+      const g = String(rec.r.Gender || '').toLowerCase();
+      const target = (g === 'female') ? femaleRows : maleRows;
+      target.push(rec);
+    });
+
+    const sortRows = (arr) => arr.sort((a,b) => {
+      const ga = groupOrder.indexOf(groupOf(a.r['Conf No']));
+      const gb = groupOrder.indexOf(groupOf(b.r['Conf No']));
+      if (ga !== gb) return (ga<0?99:ga) - (gb<0?99:gb);
+      // within same group, sort by Conf No number then name
+      const na = numOf(a.r['Conf No']);
+      const nb = numOf(b.r['Conf No']);
+      if (na !== nb) return na - nb;
+      return String(a.r.Name).localeCompare(String(b.r.Name));
+    });
+    sortRows(maleRows);
+    sortRows(femaleRows);
+
+    // Compute name column width per bucket for nice alignment
+    const fmtLine = (rec, nameWidth) => {
+      const conf = String(rec.r['Conf No'] || '').trim();
+      const sevak = /\(Sevak\)/.test(rec.r.Name) ? ' [SEVAK]' : '';
+      const nameClean = rec.r.Name.replace(' (Sevak)', '');
+      const fields = rec.kept.map(f => `${f}: ${String(rec.r[f]).replace(/\s+/g,' ').trim()}`).join(' | ');
+      const namePart = `${nameClean}${sevak}`.padEnd(nameWidth);
+      const confPart = conf.padEnd(5);
+      return `${confPart} ${namePart} (${rec.r.Gender}, age ${rec.r.Age}) -- ${fields}`;
+    };
+
+    const buildSection = (label, recs) => {
+      if (!recs.length) return '';
+      const nameWidth = Math.max(0, ...recs.map(r => r.r.Name.replace(' (Sevak)','').length + (/\(Sevak\)/.test(r.r.Name) ? 7 : 0))) ;
+      return [label, ...recs.map(r => fmtLine(r, Math.min(nameWidth, 30)))].join('\n');
+    };
+
+    const sections = [];
+    if (maleRows.length)   sections.push(buildSection(`Males (${maleRows.length}):`, maleRows));
+    if (femaleRows.length) sections.push(buildSection(`Females (${femaleRows.length}):`, femaleRows));
 
     const text = `Vipassana 10-day course teacher review.
 Course: ${courseLabel}.
@@ -228,7 +277,7 @@ For each, give a one-line verdict using ONE of:
 
 Be conservative on: active mental health symptoms with current crisis, surgery within 3 months, third-trimester pregnancy, severe addiction with concurrent depression, psychiatric medication changes within 30 days. Sevaks face a slightly higher bar.
 
-${lines}`;
+${sections.join('\n\n')}`;
     return { text, count: rows.length };
   }
 
@@ -247,6 +296,8 @@ ${lines}`;
       case 'email_malformed':          return 'malformed email';
       case 'aadhar_masked':            return 'Aadhar masked';
       case 'aadhar_length':            return 'Aadhar wrong length';
+      case 'id_missing':               return 'ID Type or ID No missing';
+      case 'id_not_aadhar':            return `ID is ${f.idType}, not Aadhar`;
       case 'id_type_concatenated':     return 'ID Type concat';
       case 'id_type_unknown':          return 'ID Type unknown';
       case 'age_dob_mismatch':         return `age vs DOB (listed ${f.listedAge}, calc ${f.calcAge})`;
@@ -255,7 +306,6 @@ ${lines}`;
       case 'conf_gender_mismatch':     return `Conf ${f.confNo} vs ${f.gender}`;
       case 'conf_no_duplicate':        return `duplicate Conf ${f.confNo}`;
       case 'within_file_duplicate':    return `${f.matchBy} dup rows ${(f.rows||[]).join(',')}`;
-      case 'duplicate_status_orphan':  return 'Duplicate-status orphan';
       case 'status_unknown':           return `unknown Status: ${f.value}`;
       case 'emergency_eq_self':        return 'emergency = own mobile';
       case 'emergency_partial':        return `emergency partial (name=${f.hasName?'Y':'N'}, phone=${f.hasPhone?'Y':'N'})`;
@@ -358,18 +408,120 @@ ${lines}`;
   const ACTIVE = new Set(['expected', 'confirmed']);
   const activeCount = mapped.filter(r => ACTIVE.has(String(r.Status).toLowerCase())).length;
 
+  // Map check name -> CSS class for contrast color coding
+  const CHECK_CLASS = {
+    // ID issues — magenta/purple, highest contrast for the new ID checks
+    id_missing:           'f-id-missing',
+    id_not_aadhar:        'f-id-alt',
+    id_type_concatenated: 'f-id-alt',
+    id_type_unknown:      'f-id-alt',
+    aadhar_masked:        'f-id-alt',
+    aadhar_length:        'f-id-alt',
+    // Phone — orange
+    phone_short:          'f-phone',
+    phone_prefix_invalid: 'f-phone',
+    // Email — teal
+    email_missing:        'f-email',
+    email_malformed:      'f-email',
+    // Duplicates — yellow
+    within_file_duplicate:    'f-dup',
+    conf_no_duplicate:        'f-dup',
+    cross_course_duplicate:   'f-dup',
+    // Demographic / age — light blue
+    age_dob_mismatch: 'f-age',
+    age_under_min:    'f-age',
+    age_over_max:     'f-age',
+    // Safety — red (matches default)
+    emergency_eq_self:  'f-safety',
+    emergency_partial:  'f-safety',
+    // Soft — gray
+    shared_mobile:           'f-soft',
+    shared_email_unrelated:  'f-soft',
+    // Status / misc
+    status_unknown:           'f-status',
+    conf_gender_mismatch:     'f-status',
+    missing_field:            'f-missing',
+  };
+
+  // Build human-readable description per finding
+  function describe(f) {
+    const nameList = (arr) => {
+      if (!arr || !arr.length) return '';
+      if (arr.length === 1) return arr[0];
+      if (arr.length === 2) return `${arr[0]} and ${arr[1]}`;
+      return `${arr.slice(0,-1).join(', ')} and ${arr.slice(-1)[0]}`;
+    };
+    switch (f.check) {
+      case 'missing_field':
+        return `${f.field} is missing`;
+      case 'phone_short':
+        return `Phone is only ${f.len} digit${f.len===1?'':'s'} (less than 10): ${f.value}`;
+      case 'phone_prefix_invalid':
+        return `Phone does not start with 6-9: ${f.value}`;
+      case 'email_missing':
+        return `Email is missing`;
+      case 'email_malformed':
+        return `Email is malformed: ${f.value}`;
+      case 'aadhar_masked':
+        return `Aadhar is masked (export issue): ${f.value}`;
+      case 'aadhar_length':
+        return `Aadhar is ${f.len} digit${f.len===1?'':'s'}, expected 12: ${f.value}`;
+      case 'id_missing':
+        return `ID Type or ID No is missing`;
+      case 'id_not_aadhar':
+        return `ID is ${f.idType}${f.note ? ' — '+f.note : ''}, not Aadhar`;
+      case 'id_type_concatenated':
+        return `ID Type field has multiple values concatenated: "${f.value}"`;
+      case 'id_type_unknown':
+        return `ID Type is unrecognized: "${f.value}"`;
+      case 'age_dob_mismatch':
+        return `Age says ${f.listedAge} but DOB calculates to ${f.calcAge} (DOB ${f.dob})`;
+      case 'age_under_min':
+        return `Age ${f.age} is under 18 (DOB ${f.dob})`;
+      case 'age_over_max':
+        return `Age ${f.age} is over 95 (DOB ${f.dob})`;
+      case 'conf_gender_mismatch':
+        return `Conf No ${f.confNo} implies the other gender from "${f.gender}"`;
+      case 'conf_no_duplicate':
+        return `Conf No ${f.confNo} is used on rows ${(f.rows||[]).join(', ')}`;
+      case 'within_file_duplicate': {
+        if (f.matchBy === 'name+dob') {
+          const parts = String(f.key||'').split('|');
+          const dob = parts[1] || '?';
+          return `${nameList(f.names)} have the same name and DOB (${dob})`;
+        }
+        const by = f.matchBy;
+        return `${nameList(f.names)} share the same ${by}: ${f.key}`;
+      }
+      case 'status_unknown':
+        return `Status value is unrecognized: "${f.value}"`;
+      case 'emergency_eq_self':
+        return `Emergency contact number is the same as own mobile`;
+      case 'emergency_partial':
+        return `Emergency contact is incomplete (name ${f.hasName?'present':'missing'}, phone ${f.hasPhone?'present':'missing'})`;
+      case 'shared_mobile':
+        return `${nameList(f.names)} share mobile number ${f.phone} (likely family)`;
+      case 'shared_email_unrelated':
+        return `${nameList(f.names)} share email ${f.email} but have unrelated surnames`;
+      case 'cross_course_duplicate': {
+        const where = (f.alsoIn||[]).map(x => x.courseId + (x.status?` (${x.status})`:'')).join(', ');
+        const by = f.matchBy === 'aadhar' ? 'Aadhar' : f.matchBy;
+        return `Also registered active in: ${where} (matched by ${by})`;
+      }
+      default:
+        return f.check;
+    }
+  }
+
   const renderList = (arr) => {
     if (!arr.length) return '<em style="color:#888;font-size:12px">none</em>';
     return arr.map(f => {
-      const extras = Object.keys(f)
-        .filter(k => !['check','row','name'].includes(k))
-        .map(k => `<code class="x">${k}=${typeof f[k]==='string'?f[k]:JSON.stringify(f[k])}</code>`)
-        .join(' ');
       const aid = mapped[f.row]?._aid;
       const editLink = aid ? `<a href="/app/${aid}/edit" target="_top">edit</a>` : '';
-      return `<div class="finding">
-        <code>r${f.row}</code> ${editLink} <b>${f.name||''}</b><br>
-        <span class="check">${f.check}</span> ${extras}
+      const cls = CHECK_CLASS[f.check] || '';
+      return `<div class="finding ${cls}">
+        ${editLink} <b>${f.name||''}</b><br>
+        <span class="desc">${describe(f)}</span>
       </div>`;
     }).join('');
   };
@@ -384,7 +536,7 @@ ${lines}`;
         <div class="sub2">${courseKey} — ${mapped.length} rows, ${activeCount} active</div>
       </div>
       <div class="hdr-right">
-        <button id="ca-claude">Send to Claude</button>
+        <button id="ca-claude">For Teachers Review</button>
         <button id="ca-whatsapp" class="wa">Send to WhatsApp</button>
         <button id="ca-export">Export JSON</button>
         <button id="ca-mode" title="Toggle layout">⇆ ${mode==='split'?'Float':'Split'}</button>
@@ -477,6 +629,28 @@ ${lines}`;
     .sec-red { color:#c33; } .sec-amber { color:#e80; } .sec-blue { color:#06c; } .sec-gray { color:#666; }
     .cnt { font-size:13px; color:#666; font-weight:normal; }
     .finding { margin:4px 0; padding:6px 8px; background:#f7f7f7; border-radius:4px; border-left:3px solid #c33; font-size:12px; line-height:1.4; }
+    .finding b { font-size:13px; }
+    .finding .desc { color:#333; font-size:12px; }
+    .finding.f-id-missing { background:#ffe0f0; border-left:5px solid #d0009f; }
+    .finding.f-id-missing .desc { color:#9c0070; font-weight:600; }
+    .finding.f-id-alt     { background:#fbe5ff; border-left:5px solid #9c27b0; }
+    .finding.f-id-alt     .desc { color:#6a1b8a; font-weight:600; }
+    .finding.f-phone      { background:#fff1de; border-left:3px solid #f57c00; }
+    .finding.f-phone      .desc { color:#a04d00; }
+    .finding.f-email      { background:#defaf6; border-left:3px solid #009688; }
+    .finding.f-email      .desc { color:#00695c; }
+    .finding.f-dup        { background:#fff8d8; border-left:3px solid #ddae00; }
+    .finding.f-dup        .desc { color:#8a6500; }
+    .finding.f-age        { background:#dff0ff; border-left:3px solid #0288d1; }
+    .finding.f-age        .desc { color:#01579b; }
+    .finding.f-safety     { background:#ffe5e5; border-left:3px solid #d32f2f; }
+    .finding.f-safety     .desc { color:#b71c1c; }
+    .finding.f-soft       { background:#f0f0f0; border-left:3px solid #999; }
+    .finding.f-soft       .desc { color:#555; }
+    .finding.f-status     { background:#ece7ff; border-left:3px solid #5e35b1; }
+    .finding.f-status     .desc { color:#311b92; }
+    .finding.f-missing    { background:#ffeded; border-left:3px solid #c33; }
+    .finding.f-missing    .desc { color:#b71c1c; }
     .finding code { color:#333; background:#eee; padding:0 4px; border-radius:2px; }
     .finding code.x { background:transparent; color:#555; }
     .finding a { color:#06c; text-decoration:none; margin-right:4px; }
