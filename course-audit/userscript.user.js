@@ -45,6 +45,34 @@
     });
   }
 
+  // ---------- Shared FAB stack ----------
+  // Multiple userscripts append into one #dipi-fab-stack so buttons don't overlap.
+  // Each button sets data-order; we re-sort on append so load order doesn't matter.
+  function getFabStack() {
+    let stack = document.getElementById('dipi-fab-stack');
+    if (stack) return stack;
+    stack = document.createElement('div');
+    stack.id = 'dipi-fab-stack';
+    stack.style.cssText = [
+      'position:fixed', 'bottom:18px', 'right:18px', 'z-index:2147483644',
+      'display:flex', 'flex-direction:column', 'gap:8px', 'align-items:flex-end',
+      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      'user-select:none', 'pointer-events:none'
+    ].join(';');
+    document.body.appendChild(stack);
+    return stack;
+  }
+  function appendFab(btn, order) {
+    btn.dataset.order = String(order);
+    const stack = getFabStack();
+    stack.appendChild(btn);
+    // Re-sort by data-order ascending (top to bottom)
+    const kids = Array.from(stack.children).sort((a, b) =>
+      (parseInt(a.dataset.order || '99', 10)) - (parseInt(b.dataset.order || '99', 10))
+    );
+    kids.forEach(k => stack.appendChild(k));
+  }
+
   // ---------- Floating Re-run button (always available) ----------
   function addReRunButton() {
     if (document.getElementById('ca-rerun-btn')) return;
@@ -53,11 +81,11 @@
     btn.textContent = '↻ Audit';
     btn.title = 'Re-run course audit (right-click to toggle auto-run)';
     btn.style.cssText = [
-      'position:fixed', 'bottom:18px', 'right:18px', 'z-index:2147483646',
-      'padding:8px 14px', 'background:#06c', 'color:#fff', 'border:0',
-      'border-radius:6px', 'cursor:pointer',
+      'padding:10px 14px', 'background:#06c', 'color:#fff', 'border:0',
+      'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       "font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-      'box-shadow:0 2px 8px rgba(0,0,0,.3)', 'user-select:none'
+      'font-weight:600', 'box-shadow:0 2px 8px rgba(0,0,0,.3)',
+      'min-width:140px', 'text-align:center'
     ].join(';');
     btn.onclick = () => injectLoader();
     btn.oncontextmenu = (e) => {
@@ -65,15 +93,14 @@
       const cur = localStorage.getItem(AUTORUN_KEY);
       const newVal = (cur === 'false') ? 'true' : 'false';
       localStorage.setItem(AUTORUN_KEY, newVal);
-      btn.style.background = (newVal === 'true') ? '#06c' : '#888';
+      btn.style.opacity = (newVal === 'true') ? '1' : '0.55';
       btn.title = `Re-run audit (auto-run: ${newVal})`;
     };
-    // Reflect initial state
     if (localStorage.getItem(AUTORUN_KEY) === 'false') {
-      btn.style.background = '#888';
+      btn.style.opacity = '0.55';
       btn.title = 'Re-run audit (auto-run: false)';
     }
-    document.body.appendChild(btn);
+    appendFab(btn, 10); // order: 10 (between Open Tracker=5 and Scrape=20)
   }
 
   function shouldAutoRun() {
