@@ -1,107 +1,170 @@
 # dipi.vridhamma.org Course Audit
 
-Browser bookmarklet that audits the applicants page at `https://dipi.vridhamma.org/search-course/{centreid}/{courseid}` for data-quality issues, safety flags, and cross-course double-bookings. Hosted as static JS on GitHub Pages.
-
-Live at: `https://kapaggar.github.io/callconfirm/course-audit/`
+Browser tool that audits the applicants page at `https://dipi.vridhamma.org/search-course/{centreid}/{courseid}` for data-quality issues, safety flags, and cross-course double-bookings. Hosted as static JS on GitHub Pages at `https://kapaggar.github.io/callconfirm/course-audit/`.
 
 ## Files
 
 | File | Role |
 |---|---|
 | `audit.js` | Pure rule engine. Framework-agnostic. Takes an array of attendee objects, returns findings. |
-| `loader.js` | GH Pages entry point. Adapter for `dipi.vridhamma.org`, UI (split/float), noise filter for Send to Claude. |
-| `bookmarklet.txt` | The `javascript:` one-liner you drag to bookmarks bar. |
+| `loader.js` | Adapter for dipi.vridhamma.org. Renders the audit panel, handles Send to Claude / Send to WhatsApp / Export JSON. |
+| `userscript.user.js` | Tampermonkey shell. Auto-injects `loader.js` on every dipi `/search-course/` page load. |
+| `bookmarklet.txt` | Manual one-click alternative to the userscript. |
 
-## Install
+## Install — pick one
 
-1. Open `bookmarklet.txt`, copy the whole `javascript:...` line, drag it to your browser bookmarks bar (or right-click bookmarks → Add → paste as URL).
-2. Visit `https://dipi.vridhamma.org/search-course/{centreid}/{courseid}`.
-3. Wait for the applicants table to load.
-4. Click the bookmarklet.
+### A. Tampermonkey userscript (recommended)
 
-## UI: split-view by default
+One-time install, auto-runs on every applicants page, auto-updates when you push changes.
 
-The page shrinks to **60vw on the left**, an audit iframe occupies **40vw on the right** spanning full viewport height. Toggle to floating-overlay mode via the **⇆ Float** button. Preference is saved in `localStorage` and applied on the next run.
+1. Install [Tampermonkey](https://www.tampermonkey.net/) (Chrome / Firefox / Edge / Safari).
+2. Open `https://kapaggar.github.io/callconfirm/course-audit/userscript.user.js` in your browser. Tampermonkey will prompt to install.
+3. Visit any `https://dipi.vridhamma.org/search-course/...` page. The audit panel auto-appears once the DataTable finishes loading (usually <2 seconds).
+4. A floating `↻ Audit` button bottom-right re-runs the audit any time (useful after editing rows). Right-click the button to toggle auto-run on/off.
 
-Section headers (Hard errors / Safety / Cross-course / Soft) render at 16px bold; row content is 12px. Color coding: red = hard errors, amber = safety, blue = cross-course, gray = advisory.
+Tampermonkey checks for script updates daily. `loader.js` and `audit.js` update every click via cache-buster, so audit logic changes propagate instantly — no userscript reinstall needed.
 
-## Send to Claude noise filter
+### B. Bookmarklet (no extension)
 
-The button copies a curated prompt to clipboard with rows that *actually disclose something*. Filters applied:
+For machines where Tampermonkey isn't available.
 
-**Skipped entirely:**
+1. Open `bookmarklet.txt`, copy the `javascript:...` line.
+2. Drag into your bookmarks bar (or right-click bookmarks → Add → paste as URL).
+3. On a dipi `/search-course/` page, click the bookmark.
+
+## UI
+
+Default layout: split-view. Page shrinks to 60vw on the left, audit iframe occupies 40vw on the right at full viewport height. Toggle to floating overlay via the `⇆ Float` button. Preference saved in `localStorage.courseAudit.mode`.
+
+Section headers (Hard errors / Safety / Cross-course / Soft) render at 16px bold with color coding (red/amber/blue/gray). Rows are 12px.
+
+## Action buttons in the panel
+
+| Button | Behavior |
+|---|---|
+| **Send to Claude** | Builds a noise-filtered prompt (~15–25 rows from a 200-row course), copies to clipboard. Paste into Claude.ai or Claude in Chrome. |
+| **Send to WhatsApp** | Opens a recipient modal. Pick a saved recipient, a recent number, or type a new one. Opens WhatsApp Web/desktop pre-filled with a short summary. |
+| **Export JSON** | Downloads `audit_{courseId}.json` for offline review or sharing. |
+| **⇆ Float / Split** | Toggle layout. |
+| **Clear** | Wipes the cross-course cache in localStorage. |
+| **×** | Closes the panel. |
+
+## Send to Claude — noise filter
+
+Drops from the prompt before sending:
+
 - Pregnancy Details for any male applicant
-- Pregnancy Details starting with "No" (all genders)
-- Sensitive fields equal to any of: blank, `no`, `na`, `none`, `nil`, `-`, `.`
-- Sensitive fields equal to generic-positive single words: `normal`, `fine`, `healthy`, `good`, `happy`, `cheerful`, `stable`, `best`, `nice`, `cordial`, `ok`, `cool`, `well`, `great`, `satisfied`, `peaceful`, `positive`, `sympathy`
-- Generic-positive multi-word phrases: `very good`, `all good`, `happy and good`, `happy and cheerful`, `HAPPY AND SATISFIED`, `happy ,cheerful`, etc.
-- Single negative-state words alone: `stressed`, `confused`, `anxious`, `sad`, `netural` (these are not actionable on their own — multi-word disclosures pass through)
-- Geographic noise: 40+ Indian city/state names typed into Other Info (Delhi, Uttar Pradesh, Mumbai, etc.)
-- Rows where every sensitive field was filtered out
+- Pregnancy Details starting with "No"
+- Generic-positive values: `happy`, `good`, `fine`, `normal`, `healthy`, `nice`, `best`, `cordial`, `stable`, `cheerful`, `satisfied`, `peaceful`, etc.
+- Generic-positive multi-word: `very good`, `all good`, `happy and good`, `HAPPY AND SATISFIED`, etc.
+- Single negative-state words alone: `stressed`, `confused`, `anxious`, `sad`, `netural` (these are why people come; multi-word disclosures pass through)
+- Geographic noise typed into Other Info: 40+ Indian cities + 28 states
+- Rows where every sensitive field is filtered out
 
-**Kept (reaches Claude):**
+Kept (reaches Claude):
+
 - `depressed` (clinical word, even alone)
-- Multi-word free-text that isn't on the exact-noise list (e.g. "Not normal with husband", "Live bat karke", "Confused, procastrinated, no drive for success or alignment")
+- Multi-word free text (e.g. "Not normal with husband", "Live bat karke", "Confused, procastrinated, no drive for success or alignment")
 - All Physical Health, Medication, Addiction disclosures other than blank/"no"
-- Pregnancy with details ("Yes (6 months)")
+- Pregnancy with details (e.g. "Yes (6 months)")
 
-The prompt template asks Claude for a one-line verdict: `PROCEED` / `TEACHER-CALL` / `DEFER` / `DECLINE`, with conservatism rules for active mental health crises, surgery within 3 months, third-trimester pregnancy, severe addictions, and sevak-role applicants.
+## Send to WhatsApp
 
-Result: a 200-row course typically yields a 15-25 row prompt instead of 100+.
+Format: short, scannable summary (~500–800 chars typically; well within wa.me URL limits).
+
+```
+Audit: 10 Day / 2026 / 17th-Jun to 28th-Jun
+63/66879 — 96 rows, 88 active
+
+🔴 4 hard / 🟡 8 safety / 🔵 1 cross-course
+
+Top hard errors:
+• r93 Neelam Singh — missing Emergency Contact No
+• r35 Satyavir Singh — phone dup rows 35,36
+• r45 Sureshvati Singh — phone dup rows 45,46
+  …+1 more
+
+Cross-course:
+• r12 Vikas Kumar — also in 2026-05-20, 2026-06-03 (by aadhar)
+
+Safety: 8 flag(s) — see audit panel
+
+Sensitive: Physical Health: 5, Mental Health: 8, Medication: 12
+
+View: https://dipi.vridhamma.org/search-course/63/66879
+```
+
+### Recipient management
+
+- **Saved recipients** — named numbers (e.g. "Tyler", "Praveen"). Click chip to send, click × on chip to delete. Add by checking "Save as" with a label when sending to a new number.
+- **Recent** — last 5 numbers used (excluding saved). Click to send.
+- **New number** — country code dropdown (default +91, plus US/UK/AU/SG/AE/DE/FR/JP/NP) + 10-digit input.
+
+Validation: for `+91`, must be 10 digits starting `6–9`. Otherwise 7–15 total digits.
+
+Recipients stored in `localStorage` keys:
+- `courseAudit.whatsapp.recipients` → `[{label, e164}]`
+- `courseAudit.whatsapp.recent` → `[e164, ...]` (last 5)
+
+Both stay on your machine. Nothing is sent over the network until you click "Open WhatsApp", at which point a new tab opens to `wa.me` pre-filled and YOU click Send inside WhatsApp.
+
+### Privacy guard
+
+The WhatsApp summary intentionally contains only:
+- Row indices
+- Names (already public to anyone with portal access)
+- Check names + small extras (e.g. "phone dup rows 35,36")
+- Sensitive field counts (numbers only)
+- A link back to the course page
+
+It does NOT contain Aadhar, DOB, mobile, email, or any free-text disclosures. For full detail, use Export JSON or Send to Claude.
 
 ## Cross-course double-booking
 
-Each run caches the course's mapped rows in `localStorage` under `courseAudit.cache` (last 12 courses retained). The cross-course check matches on Aadhar or PhoneMobile across other cached courses. Workflow:
+Each run caches mapped rows in `localStorage.courseAudit.cache` (last 12 courses). The cross-course check matches by Aadhar or PhoneMobile across other cached courses. Workflow:
 
-1. Open course 1 page → click bookmarklet → close.
-2. Open course 2 page → click bookmarklet → cross-course section lists anyone double-registered against course 1.
-3. Repeat for as many upcoming courses as you need.
-
-Clear via the "Clear" button or `localStorage.removeItem('courseAudit.cache')` in DevTools.
+1. Open course 1 page → audit runs → close.
+2. Open course 2 page → audit runs → cross-course section lists anyone double-registered against course 1.
+3. Repeat. Each successive run cross-checks all previously cached courses.
 
 ## Data model
 
-The dipi page server-renders all rows inline as `var dataset = [...]` inside `$(document).ready()`, then DataTables binds. Since the variable is scoped, the adapter reads via:
+dipi server-renders all rows inline as `var dataset = [...]` inside `$(document).ready()`. Adapter reads via:
 
 ```js
 $('#table-applicants').DataTable().rows().data().toArray()
 ```
 
-The 84 internal keys (`contact_mobile`, `app_status`, `confno`, `aadhar`, ...) are mapped to the xlsx export column names (`PhoneMobile`, `Status`, `Conf No`, `ID No`, ...) that the rule engine expects.
-
-Critical detail: the dipi JSON has two status fields — `status` is `"Expected (SM1)"` (combined with Conf No) and `app_status` is the clean `"Expected"` / `"Confirmed"` / `"Cancelled"` / `"Duplicate"` etc. The adapter uses `app_status`.
-
-## Privacy / security
-
-- All processing is local. Nothing leaves the browser unless you explicitly click **Send to Claude** (clipboard) or **Export JSON** (file).
-- The `courseAudit.cache` localStorage entry persists across sessions on `dipi.vridhamma.org`. Clear after use if multiple admins share the machine.
-- The bookmarklet runs with full page privileges (cookies, session). Don't run it on untrusted sites.
-- The "Send to Claude" prompt is restricted to applicants with non-empty sensitive disclosures after noise filtering, so clipboard PII volume is minimized.
+84 internal keys mapped to xlsx export column names. Use `app_status` not `status` (the latter has Conf No appended like `"Expected (SM1)"`).
 
 ## Update flow
 
-1. Edit `audit.js` or `loader.js` locally.
-2. Commit and push to `main`.
-3. GH Pages serves the new version within a minute.
-4. Bookmarklet's `?v=Date.now()` cache buster picks up the new version on next click — no reinstall needed.
+1. Edit `audit.js` / `loader.js` / `userscript.user.js`.
+2. Commit, push to `main`.
+3. GH Pages serves new version within a minute.
+4. `audit.js` and `loader.js` cache-busted via `?v=Date.now()` — picked up on next run.
+5. `userscript.user.js` checked daily by Tampermonkey or on-demand via Tampermonkey dashboard.
+
+## Disabling auto-run
+
+Right-click the `↻ Audit` floating button. The button turns gray and `localStorage.courseAudit.autorun` is set to `'false'`. Right-click again to re-enable, or click the button to run once on the current page.
 
 ## Verified against your data
 
-The adapter and rule engine were tested against four 2026 course exports (May 20, Jun 3, Jun 17, Jul 1). Sample findings reproduced:
+Adapter and rules tested against four 2026 course exports (May 20, Jun 3, Jun 17, Jul 1). Sample findings reproduce:
 
-- Aadhar masked:   (`XXXXXXXX####`)
-- Phone with 8-9 digits: eg (`45077741`)
-- Malformed email:  
-- Missing City:  
-- Missing Emergency Contact No:
-- Emergency = self:  active rows across the  courses
-- Cross-course active duplicates: 
+- Aadhar masked: Jul 1 r30 Nandi Sharma, r31 Vishal Kumar
+- 8-digit phone: Jun 3 r131 Aditya Jagadale
+- Malformed email: May 20 r161 Geeta Rani
+- Missing City: Jun 3 r132 Vikas Chaudhary
+- Missing Emergency Contact No: Jun 17 r93 Neelam Singh
+- Emergency = own mobile: 24 active rows across all four courses
+- Cross-course actives: Vikas Kumar, Bhavana, Suruchi, Dinesh Kumar, Lalit Kumar, Monika Rani
 
 ## Roadmap
 
-- Auto-run on page load via userscript (Tampermonkey)
-- Diff mode: highlight only findings new since last run
-- Slack webhook for daily summary
-- PIN code → State validator (catch postal data errors)
-- Sevak-specific checks (Conf No prefix `SM`/`SF` vs role)
 - Unit tests on `audit.js` against fixture data (Node-runnable)
+- Diff mode: highlight only findings new since last run
+- Cloud-API WhatsApp path (Meta Business / Twilio) for scheduled / automated sends
+- PIN code → State validator
+- Sevak-specific checks (Conf No prefix `SM`/`SF` vs role)
