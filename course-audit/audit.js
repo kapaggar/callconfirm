@@ -30,6 +30,27 @@
     return s.length === 12 ? s : null;
   };
 
+  // Normalize raw 12-digit string regardless of ID Type
+  const normAadharRaw = (x) => {
+    if (x == null) return null;
+    const s = String(x).replace(/\D/g, '');
+    return s.length === 12 ? s : null;
+  };
+
+  // Normalize PAN to uppercase, strip whitespace, validate format
+  const PAN_RE_INTERNAL = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+  const normPan = (x) => {
+    if (x == null) return null;
+    const s = String(x).replace(/\s+/g, '').toUpperCase();
+    return PAN_RE_INTERNAL.test(s) ? s : null;
+  };
+
+  const normEmail = (x) => {
+    if (x == null) return null;
+    const s = String(x).trim().toLowerCase();
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? s : null;
+  };
+
   const parseDate = (x) => {
     if (!x) return null;
     const d = new Date(x);
@@ -61,17 +82,26 @@
     const findings = { hardErrors: [], safety: [], soft: [], sensitiveCounts: {}, crossCourse: [] };
 
     // attach normalized fields and row index
-    const data = rows.map((r, i) => ({
-      _i: i,
-      _name: normName(r.Name),
-      _phone: normPhone(r.PhoneMobile),
-      _email: r.Email ? String(r.Email).trim().toLowerCase() : null,
-      _aadhar: normAadhar(r['ID No'], r['ID Type']),
-      _dob: parseDate(r.DOB),
-      _emer: normPhone(r['Emergency Contact No']),
-      _active: isActive(r),
-      raw: r
-    }));
+    const data = rows.map((r, i) => {
+      // Aadhar: prefer the primary ID if ID Type=Aadhar, else fall back to 'Aadhar Raw'
+      const aadhar = normAadhar(r['ID No'], r['ID Type']) || normAadharRaw(r['Aadhar Raw']);
+      // PAN: prefer 'PAN Raw', else use primary ID if ID Type=Pan card
+      let panSrc = r['PAN Raw'];
+      if (!panSrc && /^pan/i.test(String(r['ID Type'] || ''))) panSrc = r['ID No'];
+      const pan = normPan(panSrc);
+      return {
+        _i: i,
+        _name: normName(r.Name),
+        _phone: normPhone(r.PhoneMobile),
+        _email: normEmail(r.Email),
+        _aadhar: aadhar,
+        _pan: pan,
+        _dob: parseDate(r.DOB),
+        _emer: normPhone(r['Emergency Contact No']),
+        _active: isActive(r),
+        raw: r
+      };
+    });
 
     const active = data.filter(d => d._active);
 
@@ -140,22 +170,40 @@
       }
     });
 
-    // 5b. ID Type not Aadhar (preference flag) — Aadhar is the standard;
-    //     null/missing, PAN, Voter ID are exceptions worth a teacher review.
-    //     Passport is accepted for foreign nationals; flag only for Indian/blank country.
+    // 5b. ID Type / ID No completely missing
     active.forEach(d => {
       const t = String(d.raw['ID Type'] || '').toLowerCase().trim();
       const no = String(d.raw['ID No'] || '').trim();
-      const country = String(d.raw.Country || '').toLowerCase().trim();
-      const isIndian = (country === '' || country === 'india');
       if (!t || !no) {
         push(H, 'id_missing', d, { idType: d.raw['ID Type'] || null, idNo: d.raw['ID No'] || null });
-        return;
       }
-      if (t === 'pan card') push(H, 'id_not_aadhar', d, { idType: 'PAN' });
-      else if (t === 'voter id') push(H, 'id_not_aadhar', d, { idType: 'Voter ID' });
-      else if (t === 'driving license') push(H, 'id_not_aadhar', d, { idType: 'Driving License' });
-      else if (t === 'passport' && isIndian) push(H, 'id_not_aadhar', d, { idType: 'Passport', note: 'Indian applicant on passport' });
+    });
+
+    // 5c. PAN required for donation receipts (Indian tax dept mandate).
+    //     - Flag if PAN is missing entirely
+    //     - Flag if PAN is present but doesn't match Indian PAN format
+    //     - Foreign nationals (Country != India and != blank) are exempt
+    const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
+    active.forEach(d => {
+      const country = String(d.raw.Country || '').toLowerCase().trim();
+      const isIndian = (country === '' || country === 'india');
+      if (!isIndian) return;
+
+      const idType = String(d.raw['ID Type'] || '').toLowerCase().trim();
+      const idNo   = String(d.raw['ID No'] || '').trim();
+      const panRaw = String(d.raw['PAN Raw'] || '').trim();
+
+      // PAN can appear in two places:
+      //   1. The dedicated PAN column ('PAN Raw' from the dipi pancard field)
+      //   2. As the primary ID with ID Type = "Pan card"
+      let pan = panRaw;
+      if (!pan && idType === 'pan card') pan = idNo;
+
+      if (!pan) {
+        push(H, 'pan_missing', d, {});
+      } else if (!PAN_RE.test(pan.replace(/\s+/g, ''))) {
+        push(H, 'pan_invalid', d, { value: pan });
+      }
     });
 
     // 6. Age vs DOB mismatch
@@ -299,30 +347,70 @@
       const C = findings.crossCourse;
       const thisCourseId = opts.courseId || opts.courseStart;
       const others = opts.allCourses.filter(c => c.courseId !== thisCourseId);
-      const lookups = ['_aadhar', '_phone'];
+
+      // Pre-normalize all "other course" active rows once for speed
+      const otherIndex = [];
+      others.forEach(c => {
+        (c.rows || []).filter(r => isActive(r)).forEach(r => {
+          const aadhar = normAadhar(r['ID No'], r['ID Type']) || normAadharRaw(r['Aadhar Raw']);
+          let panSrc = r['PAN Raw'];
+          if (!panSrc && /^pan/i.test(String(r['ID Type'] || ''))) panSrc = r['ID No'];
+          const pan = normPan(panSrc);
+          otherIndex.push({
+            courseId: c.courseId,
+            row: r,
+            _aadhar: aadhar,
+            _pan: pan,
+            _phone: normPhone(r.PhoneMobile),
+            _email: normEmail(r.Email),
+            _name: normName(r.Name),
+            _dob: parseDate(r.DOB),
+          });
+        });
+      });
 
       active.forEach(d => {
-        lookups.forEach(key => {
-          if (!d[key]) return;
-          const matches = others.flatMap(c =>
-            (c.rows || [])
-              .filter(r => isActive(r))
-              .filter(r => {
-                if (key === '_aadhar') return normAadhar(r['ID No'], r['ID Type']) === d._aadhar;
-                if (key === '_phone') return normPhone(r.PhoneMobile) === d._phone;
-                return false;
-              })
-              .map(r => ({ courseId: c.courseId, row: r }))
-          );
-          if (matches.length) {
-            C.push({
-              check: 'cross_course_duplicate',
-              row: d._i, name: d.raw.Name, matchBy: key.replace('_', ''),
-              thisCourse: thisCourseId,
-              alsoIn: matches.map(m => ({ courseId: m.courseId, name: m.row.Name, status: m.row.Status, confNo: m.row['Conf No'] }))
+        // Map of "courseId|targetName|targetConfNo" -> { match record, set of matchBy }
+        const byTarget = new Map();
+        const addMatch = (other, matchBy) => {
+          const key = `${other.courseId}|${other.row.Name}|${other.row['Conf No']||''}`;
+          if (!byTarget.has(key)) {
+            byTarget.set(key, {
+              courseId: other.courseId,
+              name: other.row.Name,
+              status: other.row.Status,
+              confNo: other.row['Conf No'],
+              matchBy: new Set()
             });
           }
+          byTarget.get(key).matchBy.add(matchBy);
+        };
+
+        otherIndex.forEach(other => {
+          if (d._aadhar && other._aadhar === d._aadhar) addMatch(other, 'aadhar');
+          if (d._pan    && other._pan    === d._pan)    addMatch(other, 'PAN');
+          if (d._phone  && other._phone  === d._phone)  addMatch(other, 'phone');
+          if (d._email  && other._email  === d._email)  addMatch(other, 'email');
+          if (d._name && d._dob && other._name === d._name && other._dob && other._dob.getTime() === d._dob.getTime()) {
+            addMatch(other, 'name+DOB');
+          }
         });
+
+        if (byTarget.size > 0) {
+          C.push({
+            check: 'cross_course_duplicate',
+            row: d._i,
+            name: d.raw.Name,
+            thisCourse: thisCourseId,
+            alsoIn: [...byTarget.values()].map(m => ({
+              courseId: m.courseId,
+              name: m.name,
+              status: m.status,
+              confNo: m.confNo,
+              matchBy: [...m.matchBy]
+            }))
+          });
+        }
       });
     }
 

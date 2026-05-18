@@ -97,6 +97,10 @@
       Accommodation: r.acc || '',
       'ID Type': id.type,
       'ID No': id.num,
+      'Aadhar Raw': r.aadhar || '',
+      'PAN Raw': r.pancard || '',
+      'Voter ID Raw': r.voterid || '',
+      'Passport Raw': r.passport || '',
       'Conf No': r.confno || '',
       'Physical Health': stripHtml(r.physical),
       'Mental Health': stripHtml(r.mental),
@@ -297,7 +301,8 @@ ${sections.join('\n\n')}`;
       case 'aadhar_masked':            return 'Aadhar masked';
       case 'aadhar_length':            return 'Aadhar wrong length';
       case 'id_missing':               return 'ID Type or ID No missing';
-      case 'id_not_aadhar':            return `ID is ${f.idType}, not Aadhar`;
+      case 'pan_missing':              return 'PAN missing';
+      case 'pan_invalid':              return 'PAN invalid format';
       case 'id_type_concatenated':     return 'ID Type concat';
       case 'id_type_unknown':          return 'ID Type unknown';
       case 'age_dob_mismatch':         return `age vs DOB (listed ${f.listedAge}, calc ${f.calcAge})`;
@@ -313,7 +318,9 @@ ${sections.join('\n\n')}`;
       case 'shared_email_unrelated':   return 'shared email, unrelated surnames';
       case 'cross_course_duplicate': {
         const where = (f.alsoIn || []).map(x => x.courseId).join(', ');
-        return `also in ${where} (by ${f.matchBy})`;
+        const bys = new Set();
+        (f.alsoIn || []).forEach(x => (x.matchBy || []).forEach(b => bys.add(b)));
+        return `also in ${where} (by ${[...bys].join(', ')})`;
       }
       default: return f.check;
     }
@@ -412,7 +419,8 @@ ${sections.join('\n\n')}`;
   const CHECK_CLASS = {
     // ID issues — magenta/purple, highest contrast for the new ID checks
     id_missing:           'f-id-missing',
-    id_not_aadhar:        'f-id-alt',
+    pan_missing:          'f-id-missing',
+    pan_invalid:          'f-id-alt',
     id_type_concatenated: 'f-id-alt',
     id_type_unknown:      'f-id-alt',
     aadhar_masked:        'f-id-alt',
@@ -468,8 +476,10 @@ ${sections.join('\n\n')}`;
         return `Aadhar is ${f.len} digit${f.len===1?'':'s'}, expected 12: ${f.value}`;
       case 'id_missing':
         return `ID Type or ID No is missing`;
-      case 'id_not_aadhar':
-        return `ID is ${f.idType}${f.note ? ' — '+f.note : ''}, not Aadhar`;
+      case 'pan_missing':
+        return `PAN is missing (required for donation receipt)`;
+      case 'pan_invalid':
+        return `PAN format is invalid: "${f.value}" (expected 5 letters + 4 digits + 1 letter)`;
       case 'id_type_concatenated':
         return `ID Type field has multiple values concatenated: "${f.value}"`;
       case 'id_type_unknown':
@@ -504,9 +514,13 @@ ${sections.join('\n\n')}`;
       case 'shared_email_unrelated':
         return `${nameList(f.names)} share email ${f.email} but have unrelated surnames`;
       case 'cross_course_duplicate': {
-        const where = (f.alsoIn||[]).map(x => x.courseId + (x.status?` (${x.status})`:'')).join(', ');
-        const by = f.matchBy === 'aadhar' ? 'Aadhar' : f.matchBy;
-        return `Also registered active in: ${where} (matched by ${by})`;
+        // alsoIn: [{courseId, name, status, confNo, matchBy:[...]}, ...]
+        const parts = (f.alsoIn||[]).map(x => {
+          const tags = (x.matchBy||[]).join(', ');
+          const sc = [x.confNo, x.status].filter(Boolean).join(' / ');
+          return `${x.courseId}${sc ? ' ('+sc+')' : ''} [by ${tags}]`;
+        });
+        return `Also active in: ${parts.join('; ')}`;
       }
       default:
         return f.check;
