@@ -45,11 +45,11 @@ That returns the same array of 84-key objects the page started with. The loader 
 
 ## Deploy
 
-1. Create public repo, e.g. `kapil-wizni/course-audit`.
-2. Drop `audit.js` and `loader.js` at the root. Commit.
-3. Settings → Pages → Source: `main` / root.
-4. Edit `bookmarklet.txt`, replace `YOUR-USER` with your GitHub username.
-5. Drag the resulting `javascript:` line into your bookmarks bar.
+
+1. Drop `audit.js` and `loader.js` at the root. Commit.
+2. Settings → Pages → Source: `main` / root.
+3. Edit `bookmarklet.txt`, replace `YOUR-USER` with your GitHub username.
+4. Drag the resulting `javascript:` line into your bookmarks bar.
 
 Updates: edit + push. The bookmarklet's `?v=` cache buster picks up the change on next click.
 
@@ -118,9 +118,9 @@ Clear with the "Clear" button in the panel, or in DevTools: `localStorage.remove
 
 The adapter and rule engine were tested against the May 20 / Jun 3 / Jun 17 / Jul 1 xlsx exports. Findings match what we worked through in chat:
 
-- Hard errors: Aadhar masked rows in Jul 1 (r30 Nandi Sharma, r31 Vishal Kumar), 8-digit phone in Jun 3 (r131 Aditya Jagadale), malformed email in May 20 (r161 Geeta Rani), missing City in Jun 3 (r132 Vikas Chaudhary), missing Emergency Contact in Jun 17 (r93 Neelam Singh).
+- Hard errors: Aadhar masked rows in course, 8-digit phone in course , malformed email in course, missing City incourse, missing Emergency Contact in course
 - Safety: 24 emergency-equals-self rows across all four files.
-- Cross-course: 6 identities (Vikas Kumar, Bhavana, Suruchi, Dinesh, Lalit, Monika Rani) active in 2+ courses.
+- Cross-course:  identities   active in 1+ courses.
 
 ## Roadmap
 
