@@ -143,6 +143,33 @@
     showToast(a.aid ? 'Letter fetch failed — sent generic' : 'No AID — sent generic');
   }
 
+  // ── Dipi status change via /change-status/{aid}?s={status}&l=&c={custom} ──
+  // GET request, returns {status:"OK"|"FAIL", msg, confno, newstatus}
+  async function changeDipiStatus(aid, newStatus, customText) {
+    if (!aid) return { ok: false, error: 'No AID' };
+    const params = new URLSearchParams();
+    params.set('s', newStatus);
+    params.set('l', '');
+    params.set('c', customText || '');
+    const url = '/change-status/' + encodeURIComponent(aid) + '?' + params.toString();
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json, text/javascript, */*; q=0.01',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      if (!resp.ok) return { ok: false, error: 'HTTP ' + resp.status };
+      const data = await resp.json();
+      if (data.status !== 'OK') return { ok: false, error: data.msg || 'Server returned ' + data.status };
+      return { ok: true, confno: data.confno || '', newstatus: data.newstatus || newStatus };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
   // ── Helpers ──
   function fmtPhone(num) {
     if (!num) return '';
@@ -387,6 +414,14 @@
       #${OVERLAY_ID} .dt-phone-home   { background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; }
       #${OVERLAY_ID} .dt-phone-wa     { background:#dcfce7; border:1px solid #86efac; color:#15803d; }
       #${OVERLAY_ID} .dt-status-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:10px; }
+      #${OVERLAY_ID} .dt-dipi-status { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+      #${OVERLAY_ID} .dt-dipi-label { font-size:11px; color:#64748b; flex:1; min-width:120px; }
+      #${OVERLAY_ID} .dt-dipi-label b { color:#1e293b; }
+      #${OVERLAY_ID} .dt-dipi-sel { font-size:12px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1e293b; max-width:160px; }
+      #${OVERLAY_ID} .dt-dipi-custom { font-size:12px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; width:120px; }
+      #${OVERLAY_ID} .dt-dipi-update { font-size:12px; font-weight:600; padding:4px 12px; border-radius:6px; border:none; background:#3b82f6; color:#fff; cursor:pointer; }
+      #${OVERLAY_ID} .dt-dipi-update:disabled { background:#94a3b8; cursor:not-allowed; }
+      #${OVERLAY_ID} .dt-dipi-edit { font-size:14px; text-decoration:none; padding:2px 6px; }
       #${OVERLAY_ID} .dt-status-btn { padding:9px 6px; border-radius:8px; cursor:pointer; font-size:11px; font-weight:600; line-height:1.2; text-align:center; }
       #${OVERLAY_ID} .dt-notes { width:100%; margin-top:10px; padding:8px 10px; border-radius:8px; border:1px solid #e2e8f0; font-size:12px; resize:vertical; min-height:36px; background:#f8fafc; outline:none; color:#334155; }
       #${OVERLAY_ID} .dt-reset-btn { margin-top:6px; padding:6px 12px; border-radius:6px; border:1px solid #e2e8f0; background:#f8fafc; font-size:11px; color:#94a3b8; cursor:pointer; }
@@ -464,13 +499,31 @@
         if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${a.home}" class="dt-phone-btn dt-phone-home" data-call="${a.id}">🏠 ${a.home}</a>`);
         const waPhone = (a.mobile || a.home || '').replace(/^\+/, '');
         if (waPhone) phoneBtns.push(`<button class="dt-phone-btn dt-phone-wa" data-wa="${a.id}">💬 WhatsApp${a.aid ? ' ✉' : ''}</button>`);
-        if (a.aid) phoneBtns.push(`<a href="/app/${a.aid}/edit" target="_blank" class="dt-phone-btn" style="background:#f1f5f9;border:1px solid #e2e8f0;color:#475569">📝 Edit on dipi</a>`);
+
+        // Inline dipi status changer: select + Update button.
+        // Hits GET /change-status/{aid}?s={status}&l=&c= which dipi's own UI also uses.
+        const DIPI_STATUS_OPTIONS = ['Confirmed','Cancelled','Clarification','Duplicate','PreConfirmation','Regret','Rejected','Review','WaitList','Custom'];
+        const curDipi = (a.dipiStatus || '').replace(/\s*\(.*\)\s*$/, '').trim(); // strip "(SM4)" suffix
+        let dipiBlock = '';
+        if (a.aid) {
+          const opts = DIPI_STATUS_OPTIONS.map(s =>
+            `<option value="${s}"${s === curDipi ? ' selected' : ''}>${s}</option>`
+          ).join('');
+          dipiBlock = `<div class="dt-dipi-status" data-dipi="${a.id}">
+            <span class="dt-dipi-label">Dipi: <b>${a.dipiStatus || '?'}</b></span>
+            <select class="dt-dipi-sel" data-dipi-sel="${a.id}">${opts}</select>
+            <input class="dt-dipi-custom" data-dipi-custom="${a.id}" type="text" placeholder="Custom reason" style="display:none">
+            <button class="dt-dipi-update" data-dipi-update="${a.id}">Update</button>
+            <a href="/app/${a.aid}/edit" target="_blank" class="dt-dipi-edit" title="Open full edit on dipi">📝</a>
+          </div>`;
+        }
 
         const statusBtns = Object.entries(STATUSES).filter(([k]) => k !== 'pending').map(([k,v]) =>
           `<button class="dt-status-btn" data-mark="${a.id}|${k}" style="border:${a.status===k?'2px solid '+v.color:'1px solid #e2e8f0'};background:${a.status===k?v.bg:'#fff'};color:${a.status===k?v.color:'#64748b'}">${v.icon}<br>${v.label}</button>`
         ).join('');
         exp = `<div class="dt-card-expanded">
           <div class="dt-phone-btns">${phoneBtns.join('')}</div>
+          ${dipiBlock}
           <div class="dt-status-grid">${statusBtns}</div>
           <textarea class="dt-notes" placeholder="Add a note..." data-note="${a.id}">${a.notes || ''}</textarea>
           ${a.status !== 'pending' ? `<button class="dt-reset-btn" data-mark="${a.id}|pending">↩ Reset to Pending</button>` : ''}
@@ -553,6 +606,57 @@
         if (a) { a.notes = el.value; saveApplicants(); }
       });
       el.addEventListener('click', e => e.stopPropagation());
+    });
+
+    // Dipi status changer
+    ov.querySelectorAll('[data-dipi-sel]').forEach(sel => {
+      const id = sel.dataset.dipiSel;
+      const customInput = ov.querySelector(`[data-dipi-custom="${id}"]`);
+      sel.addEventListener('click', e => e.stopPropagation());
+      sel.addEventListener('change', () => {
+        if (customInput) customInput.style.display = sel.value === 'Custom' ? 'inline-block' : 'none';
+      });
+    });
+    ov.querySelectorAll('[data-dipi-custom]').forEach(inp => {
+      inp.addEventListener('click', e => e.stopPropagation());
+    });
+    ov.querySelectorAll('[data-dipi-update]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.dipiUpdate;
+        const a = state.applicants.find(x => x.id === id);
+        if (!a || !a.aid) return;
+        const sel = ov.querySelector(`[data-dipi-sel="${id}"]`);
+        const customInput = ov.querySelector(`[data-dipi-custom="${id}"]`);
+        const newStatus = sel.value;
+        const customText = (customInput && customInput.value || '').trim();
+        if (newStatus === 'Custom' && !customText) {
+          showToast('Enter custom reason text');
+          return;
+        }
+        btn.disabled = true;
+        const oldLabel = btn.textContent;
+        btn.textContent = '...';
+        try {
+          const result = await changeDipiStatus(a.aid, newStatus, customText);
+          if (result.ok) {
+            const confDisplay = result.confno ? ` (${result.confno})` : '';
+            a.dipiStatus = newStatus + confDisplay;
+            if (result.confno) a.confno = result.confno;
+            await saveApplicants();
+            showToast(a.name.split(' ')[0] + ' → dipi: ' + newStatus + (result.confno ? ' / ' + result.confno : ''));
+            render();
+          } else {
+            btn.disabled = false;
+            btn.textContent = oldLabel;
+            showToast('Failed: ' + (result.error || 'unknown'));
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = oldLabel;
+          showToast('Network error: ' + err.message);
+        }
+      });
     });
   }
 
