@@ -20,9 +20,7 @@
   var SCRAPER_URL = 'https://kapaggar.github.io/callconfirm/scraper.js';
   var TRACKER_URL = 'https://kapaggar.github.io/callconfirm/tracker-inline.js';
 
-  var AUTORUN_KEY  = 'dipiTracker.autorun';      // 'true' | 'false' | null (default true on /search-course/)
-  var BTN_ID       = 'dipi-tracker-fab';
-  var FAB_POS_KEY  = 'dipiTracker.fabPos';
+  var AUTORUN_KEY  = 'dipiTracker.autorun';
 
   function injectScraper() {
     // Tear down any existing scraper overlay first
@@ -70,23 +68,39 @@
     });
   }
 
-  function makeFab() {
-    if (document.getElementById(BTN_ID)) return;
-    var wrap = document.createElement('div');
-    wrap.id = BTN_ID;
-    wrap.style.cssText = [
+  function getFabStack() {
+    var stack = document.getElementById('dipi-fab-stack');
+    if (stack) return stack;
+    stack = document.createElement('div');
+    stack.id = 'dipi-fab-stack';
+    stack.style.cssText = [
       'position:fixed', 'bottom:18px', 'right:18px', 'z-index:2147483644',
-      'display:flex', 'flex-direction:column', 'gap:6px', 'align-items:flex-end',
+      'display:flex', 'flex-direction:column', 'gap:8px', 'align-items:flex-end',
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-      'user-select:none'
+      'user-select:none', 'pointer-events:none'
     ].join(';');
+    document.body.appendChild(stack);
+    return stack;
+  }
+  function appendFab(btn, order) {
+    btn.dataset.order = String(order);
+    var stack = getFabStack();
+    stack.appendChild(btn);
+    var kids = Array.prototype.slice.call(stack.children).sort(function (a, b) {
+      return (parseInt(a.dataset.order || '99', 10)) - (parseInt(b.dataset.order || '99', 10));
+    });
+    kids.forEach(function (k) { stack.appendChild(k); });
+  }
 
-    // Main button: re-run scraper (different label on /centre/ vs /search-course/)
+  function makeFab() {
+    if (document.getElementById('dipi-tracker-fab-primary')) return;
+
     var path = location.pathname;
     var isSearch = path.indexOf('/search-course/') > -1;
     var primaryLabel = isSearch ? '🔄 Scrape' : '🧘 Pick Course';
 
     var primary = document.createElement('button');
+    primary.id = 'dipi-tracker-fab-primary';
     primary.textContent = primaryLabel;
     primary.title = 'Run DIPI scraper (right-click to toggle auto-run)';
     primary.style.cssText = btnStyle('#3b82f6');
@@ -101,22 +115,23 @@
     };
     if (!shouldAutoRun()) primary.style.opacity = '0.55';
 
-    // Secondary: open last session in tracker (without re-scrape)
     var openBtn = document.createElement('button');
+    openBtn.id = 'dipi-tracker-fab-open';
     openBtn.textContent = '📞 Open Tracker';
     openBtn.title = 'Open inline call tracker on last session';
     openBtn.style.cssText = btnStyle('#475569');
     openBtn.onclick = openInlineTracker;
 
-    wrap.appendChild(openBtn);
-    wrap.appendChild(primary);
-    document.body.appendChild(wrap);
+    // Order top-to-bottom: Open Tracker (5), Audit (10, added by audit userscript), Scrape (20)
+    appendFab(openBtn, 5);
+    appendFab(primary, 20);
   }
 
   function btnStyle(bg) {
     return [
       'padding:10px 14px', 'background:' + bg, 'color:#fff', 'border:0',
-      'border-radius:6px', 'cursor:pointer', 'font-size:13px', 'font-weight:600',
+      'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
+      'font-size:13px', 'font-weight:600',
       'box-shadow:0 2px 8px rgba(0,0,0,.3)', 'min-width:140px', 'text-align:center'
     ].join(';');
   }
