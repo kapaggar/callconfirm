@@ -79,9 +79,9 @@
     const H = findings.hardErrors;
     const push = (arr, check, row, detail) => arr.push({ check, row: row._i, name: row.raw.Name, ...detail });
 
-    // 1. Missing critical fields
+    // 1. Missing critical fields (ID Type / ID No covered by id_missing below)
     const CRIT = ['Name', 'Gender', 'Age', 'PhoneMobile', 'Address', 'City', 'State',
-                  'ID Type', 'ID No', 'Conf No', 'Emergency Name', 'Emergency Contact No', 'DOB', 'Status'];
+                  'Conf No', 'Emergency Name', 'Emergency Contact No', 'DOB', 'Status'];
     active.forEach(d => {
       CRIT.forEach(c => {
         const v = d.raw[c];
@@ -118,7 +118,8 @@
     active.forEach(d => {
       const type = String(d.raw['ID Type'] || '');
       if (!/^aadhar/i.test(type)) return;
-      const raw = String(d.raw['ID No'] || '');
+      const raw = String(d.raw['ID No'] || '').trim();
+      if (!raw) return; // id_missing handles this case
       if (/X{4,}/i.test(raw)) push(H, 'aadhar_masked', d, { value: raw });
       else {
         const digits = raw.replace(/\D/g, '');
@@ -137,6 +138,24 @@
         if (matches.length >= 2) push(H, 'id_type_concatenated', d, { value: d.raw['ID Type'] });
         else push(H, 'id_type_unknown', d, { value: d.raw['ID Type'] });
       }
+    });
+
+    // 5b. ID Type not Aadhar (preference flag) — Aadhar is the standard;
+    //     null/missing, PAN, Voter ID are exceptions worth a teacher review.
+    //     Passport is accepted for foreign nationals; flag only for Indian/blank country.
+    active.forEach(d => {
+      const t = String(d.raw['ID Type'] || '').toLowerCase().trim();
+      const no = String(d.raw['ID No'] || '').trim();
+      const country = String(d.raw.Country || '').toLowerCase().trim();
+      const isIndian = (country === '' || country === 'india');
+      if (!t || !no) {
+        push(H, 'id_missing', d, { idType: d.raw['ID Type'] || null, idNo: d.raw['ID No'] || null });
+        return;
+      }
+      if (t === 'pan card') push(H, 'id_not_aadhar', d, { idType: 'PAN' });
+      else if (t === 'voter id') push(H, 'id_not_aadhar', d, { idType: 'Voter ID' });
+      else if (t === 'driving license') push(H, 'id_not_aadhar', d, { idType: 'Driving License' });
+      else if (t === 'passport' && isIndian) push(H, 'id_not_aadhar', d, { idType: 'Passport', note: 'Indian applicant on passport' });
     });
 
     // 6. Age vs DOB mismatch
@@ -204,16 +223,6 @@
     dedupGroup(d => d._aadhar, 'aadhar');
     dedupGroup(d => d._phone, 'phone');
     dedupGroup(d => d._name && d._dob ? `${d._name}|${d._dob.toISOString().slice(0,10)}` : null, 'name+dob');
-
-    // 11. Status=Duplicate orphan
-    data.filter(d => String(d.raw.Status || '').toLowerCase() === 'duplicate').forEach(d => {
-      const hasMatch = data.some(other => other._i !== d._i && (
-        (d._aadhar && other._aadhar === d._aadhar) ||
-        (d._phone && other._phone === d._phone) ||
-        (d._name && other._name === d._name && d._dob && other._dob && d._dob.getTime() === other._dob.getTime())
-      ));
-      if (!hasMatch) push(H, 'duplicate_status_orphan', d, {});
-    });
 
     // Unknown Status value
     data.forEach(d => {
