@@ -191,6 +191,26 @@
     return Math.floor(h / 24) + 'd ago';
   }
 
+  // ── Session index (synchronous lookup for scraper) ──
+  // Mirrors a small summary of each session into localStorage keyed by
+  // "centreid/courseid". Lets the scraper detect existing sessions for
+  // the current course without loading the tracker.
+  const SESSION_INDEX_KEY = 'dipiTracker.sessionIndex';
+  function writeSessionIndexEntry(apps, sessionId) {
+    if (!apps.length || !apps[0]._centreid || !apps[0]._courseid) return;
+    const courseKey = apps[0]._centreid + '/' + apps[0]._courseid;
+    let idx = {};
+    try { idx = JSON.parse(localStorage.getItem(SESSION_INDEX_KEY) || '{}'); } catch {}
+    const withProgress = apps.filter(a => a.status && a.status !== 'pending').length;
+    idx[courseKey] = {
+      sessionId,
+      count: apps.length,
+      withProgress,
+      updatedAt: new Date().toISOString(),
+    };
+    try { localStorage.setItem(SESSION_INDEX_KEY, JSON.stringify(idx)); } catch {}
+  }
+
   // ── Import / load / save ──
   async function importApps(rawApps, title, dates, courseType) {
     const apps = rawApps.map((d, i) => ({
@@ -237,6 +257,7 @@
       existing.courseType = courseType || existing.courseType;
       existing.updatedAt = new Date().toISOString();
       await dbPut('sessions', existing);
+      writeSessionIndexEntry(apps, existing.id);
       const fresh = await dbGetAll('sessions');
       setState({
         sessions: fresh, activeId: existing.id, applicants: apps,
@@ -249,6 +270,7 @@
     const sess = { id: sid, title: cleanTitle, createdAt: new Date().toISOString(),
                    count: apps.length, applicants: apps, dates: dates || '', courseType: courseType || '' };
     await dbPut('sessions', sess);
+    writeSessionIndexEntry(apps, sid);
     const fresh = await dbGetAll('sessions');
     setState({
       sessions: fresh, activeId: sid, applicants: apps,
@@ -268,7 +290,12 @@
   }
   async function saveApplicants() {
     const s = await dbGet('sessions', state.activeId);
-    if (s) { s.applicants = state.applicants; s.updatedAt = new Date().toISOString(); await dbPut('sessions', s); }
+    if (s) {
+      s.applicants = state.applicants;
+      s.updatedAt = new Date().toISOString();
+      await dbPut('sessions', s);
+      writeSessionIndexEntry(state.applicants, state.activeId);
+    }
   }
   function updateApp(id, patch) {
     state.applicants = state.applicants.map(a => a.id === id ? { ...a, ...patch } : a);

@@ -264,6 +264,20 @@
     var withAid = apps.filter(function (a) { return a.aid; }).length;
     var cleanTitle = title.replace(/Status:.*?,?\s*/i, '').replace(/Gender:.*$/i, '').trim() || 'Dhamma Sudha Course';
 
+    // Detect existing tracker session for this course (via session index in localStorage)
+    var courseKey = '';
+    var pathMatch = location.pathname.match(/\/search-course\/(\d+)\/(\d+)/);
+    if (pathMatch) courseKey = pathMatch[1] + '/' + pathMatch[2];
+    var existingSession = null;
+    try {
+      var idx = JSON.parse(localStorage.getItem('dipiTracker.sessionIndex') || '{}');
+      if (courseKey && idx[courseKey]) existingSession = idx[courseKey];
+    } catch (e) {}
+
+    var primaryLabel = existingSession && existingSession.withProgress > 0
+      ? '\u{1F4DE} Resume Calling (' + existingSession.withProgress + ' marked)'
+      : '\u{1F4DE} Open Inline Call Tracker';
+
     setUI(
       '<div style="text-align:center;padding:16px 0">' +
       '<div style="font-size:24px;margin-bottom:6px">\u2705</div>' +
@@ -276,7 +290,7 @@
       bdg('NM', g.NM, '#3b82f6') + bdg('OM', g.OM, '#0ea5e9') + bdg('SM', g.SM, '#06b6d4') +
       bdg('NF', g.NF, '#a855f7') + bdg('OF', g.OF, '#d946ef') + bdg('SF', g.SF, '#ec4899') +
       '</div>' +
-      B('_ds-inline', '#3b82f6', '\u{1F4DE} Open Inline Call Tracker') +
+      B('_ds-inline', '#3b82f6', primaryLabel) +
       B('_ds-t',      '#475569', '\u{1F4F1} Open in PWA (github.io)') +
       B('_ds-cp',     '#16a34a', '\u{1F4CB} Copy Data') +
       B('_ds-csv',    '#9333ea', '\u{1F4CA} Download CSV') +
