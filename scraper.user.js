@@ -18,7 +18,6 @@
   'use strict';
 
   var SCRAPER_URL = 'https://kapaggar.github.io/callconfirm/scraper.js';
-  var TRACKER_URL = 'https://kapaggar.github.io/callconfirm/tracker-inline.js';
 
   var AUTORUN_KEY  = 'dipiTracker.autorun';
 
@@ -31,16 +30,6 @@
     var s = document.createElement('script');
     s.src = SCRAPER_URL + '?v=' + Date.now();
     s.onerror = function () { console.error('[dipi-tracker] failed to load scraper.js'); };
-    document.head.appendChild(s);
-  }
-
-  function openInlineTracker() {
-    // If tracker is already loaded, just call open()
-    if (window.DipiTracker) { window.DipiTracker.open(); return; }
-    var s = document.createElement('script');
-    s.src = TRACKER_URL + '?v=' + Date.now();
-    s.onload = function () { window.DipiTracker && window.DipiTracker.open(); };
-    s.onerror = function () { alert('[dipi-tracker] failed to load tracker-inline.js'); };
     document.head.appendChild(s);
   }
 
@@ -115,15 +104,7 @@
     };
     if (!shouldAutoRun()) primary.style.opacity = '0.55';
 
-    var openBtn = document.createElement('button');
-    openBtn.id = 'dipi-tracker-fab-open';
-    openBtn.textContent = '📞 Open Tracker';
-    openBtn.title = 'Open inline call tracker on last session';
-    openBtn.style.cssText = btnStyle('#475569');
-    openBtn.onclick = openInlineTracker;
-
-    // Order top-to-bottom: Open Tracker (5), Audit (10, added by audit userscript), Scrape (20)
-    appendFab(openBtn, 5);
+    // FAB stack top-to-bottom: Audit (10, added by audit userscript), Scrape (20)
     appendFab(primary, 20);
   }
 
