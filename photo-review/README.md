@@ -2,7 +2,7 @@
 
 Review and correct applicant photos on `https://dipi.vridhamma.org/search-course/{centreid}/{courseid}` pages. Photos are often rotated 90°/180° (phone uploads) or "zoomed out" (a whole passport page where the face is a tiny fraction of the frame). dipi re-encodes uploads to 800px JPEGs and strips EXIF, so orientation cannot be fixed via metadata — this tool rotates/crops the actual pixels.
 
-**Local-only.** Corrections (rotation angle + crop rectangle, no pixels) are stored in `localStorage.photoReview.corrections`, keyed by photo ID. Corrected JPEGs are exported by explicit download. Nothing is written to dipi and no photo ever leaves the browser.
+**Local by default.** Corrections (rotation angle + crop rectangle, no pixels) are stored in `localStorage.photoReview.corrections`, keyed by photo ID. Corrected JPEGs are exported by explicit download. Nothing is written to dipi and no photo leaves the browser except via the explicit ⬆dipi upload buttons described below.
 
 Works on any centre — nothing is hardcoded.
 
@@ -33,7 +33,7 @@ Works on any centre — nothing is hardcoded.
 6. **⬇ Download fixed** exports every photo marked ✓ that has a correction (allow multiple downloads when Chrome asks).
 7. Filters: All / ⚠ Suggested / ✨ Auto-fixed / ✓ Fixed / ⏳ Unreviewed.
 
-Corrections persist in localStorage and re-apply whenever the same photo ID appears again (re-opening the course, or the same applicant in another course).
+Corrections persist in localStorage and re-apply whenever the same photo ID appears again (re-opening the course, or the same applicant in another course). Once a photo has been **uploaded to dipi**, the stored geometry is zeroed and an `uploaded` marker is kept instead — the fix now lives in dipi's pixels, so re-applying the saved rotation would double-rotate the already-fixed photo (and a later batch upload would write that corruption back). The ⬆dipi button shows ✓dipi until you make a new correction, which re-arms it.
 
 ## Privacy
 
@@ -46,9 +46,10 @@ dipi has **no photo-only endpoint**. Saving a photo means resubmitting the entir
 1. **Fetch live form** — GET `/app/{aid}/edit` and snapshot every current field value + fresh `form_build_id`/`form_token` (per-render CSRF; never reused).
 2. **Swap only the photo** — replace `files[upload_photo]` with the corrected JPEG; every other field is preserved byte-for-byte.
 3. **Dry run** — the per-photo **⬆dipi** button first shows a preview of the exact field set being resubmitted (Aadhar/phone/email/tokens masked on screen, sent in full), with the photo swap highlighted. Nothing is sent until you click **Commit**.
-4. **Verify** — after the POST, the form is re-fetched and diffed against the pre-upload snapshot (ignoring the photo and the rotating tokens). If any other field drifted, or if Drupal re-rendered the form (validation error = not saved), you get a warning and are told to check the record. A clean result reports "all other fields preserved".
+4. **Staleness re-check** (single-photo path) — the dry-run modal can sit open a while; before POSTing, the form is re-fetched and compared with the previewed snapshot. If anyone edited the record on dipi in the meantime, the upload aborts with the changed field names instead of silently overwriting their edit. The fresh fetch also supplies current CSRF tokens.
+5. **Verify** — after the POST, the form is re-fetched and diffed against the submitted snapshot (ignoring the photo and the rotating tokens). If any other field drifted, or if Drupal re-rendered the form (validation error = not saved), you get a warning and are told to check the record. A clean result reports "all other fields preserved".
 
-**⬆ Upload fixed to dipi** (header) batches every corrected, reviewed photo through the same round-trip and **stops at the first failure or drift** so you can inspect it before continuing.
+**⬆ Upload fixed to dipi** (header) batches every corrected, reviewed, not-yet-uploaded photo through the same round-trip (minus the staleness re-check — its prepare→commit gap is milliseconds) and **stops at the first failure or drift** so you can inspect it before continuing. The uploaded marker persists in localStorage, so re-running the batch after a reload will not re-send photos that already went through.
 
 ### First-use checklist (do this once before trusting it)
 1. Correct one photo for a known applicant, mark ✓ done, click **⬆dipi**.
