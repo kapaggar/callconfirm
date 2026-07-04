@@ -34,12 +34,22 @@ Corrections persist in localStorage and re-apply whenever the same photo ID appe
 
 Applicant photos are sensitive (faces, ID documents). Everything runs in the browser: the photo fetch is same-origin using your existing dipi session, face detection is Chrome's on-device Shape Detection API (no cloud), and localStorage holds only geometry. The only way pixels leave the page is your explicit download click.
 
-## Roadmap — phase 2: write corrected photos back to dipi
+## Write corrected photos back to dipi
 
-Not built yet, deliberately. The search-course page exposes no photo-upload endpoint; writing back means driving the Drupal form at `/app/{aid}/edit`. The plan, following the `/change-status` precedent in `CALL-TRACKER-MEMORY.md`:
+dipi has **no photo-only endpoint**. Saving a photo means resubmitting the entire application form to `POST /app/{aid}/edit` (Drupal 7, `form_id=dh_ma_applicant_form`, multipart, 302 → `/course/{centre}/{course}` on success). The form carries every field — name, DOB, Aadhar, phone, address, emergency contact, and the health/mental-health/medication/pregnancy disclosures — so a dropped or altered field would **wipe authoritative VRI data**. The upload is built to make that impossible to do silently:
 
-1. Manually re-upload one photo via the edit form with DevTools recording → save HAR.
-2. From the HAR, extract the multipart POST shape: file field name, `form_build_id`, `form_token`, and any AJAX wrapper Drupal uses.
-3. Add a per-photo "⬆ Upload to dipi" button that posts the corrected canvas blob, gated behind an explicit confirm; keep the local correction as the audit trail.
+1. **Fetch live form** — GET `/app/{aid}/edit` and snapshot every current field value + fresh `form_build_id`/`form_token` (per-render CSRF; never reused).
+2. **Swap only the photo** — replace `files[upload_photo]` with the corrected JPEG; every other field is preserved byte-for-byte.
+3. **Dry run** — the per-photo **⬆dipi** button first shows a preview of the exact field set being resubmitted (Aadhar/phone/email/tokens masked on screen, sent in full), with the photo swap highlighted. Nothing is sent until you click **Commit**.
+4. **Verify** — after the POST, the form is re-fetched and diffed against the pre-upload snapshot (ignoring the photo and the rotating tokens). If any other field drifted, or if Drupal re-rendered the form (validation error = not saved), you get a warning and are told to check the record. A clean result reports "all other fields preserved".
 
-Until then, the workflow for fixing dipi itself is: ⬇ download the corrected JPEG, then upload it manually on the applicant's edit page.
+**⬆ Upload fixed to dipi** (header) batches every corrected, reviewed photo through the same round-trip and **stops at the first failure or drift** so you can inspect it before continuing.
+
+### First-use checklist (do this once before trusting it)
+1. Correct one photo for a known applicant, mark ✓ done, click **⬆dipi**.
+2. In the dry-run preview, confirm the field list looks complete and correct.
+3. Commit. Expect "✓ Uploaded — all other fields preserved".
+4. Open that applicant's `/app/{aid}/edit` on dipi and eyeball: name, Aadhar (document id), phone, emergency contact, and any health disclosures are all intact, and the photo is now upright.
+5. Only after that passes should you use the batch button.
+
+If you'd rather not write to dipi at all, the ⬇ download path still works: export the corrected JPEG and upload it manually on the edit page.
