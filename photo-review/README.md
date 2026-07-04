@@ -10,7 +10,7 @@ Works on any centre — nothing is hardcoded.
 
 | File | Role |
 |---|---|
-| `review.js` | The overlay: review grid, rotate/crop, FaceDetector auto-suggest, JPEG export. Cache-busted (`?v=Date.now()`) — updates go live on next run after push. |
+| `review.js` | The overlay: review grid, rotate/crop, FaceDetector auto-suggest + confidence-gated auto-fix, JPEG export. Cache-busted (`?v=Date.now()`) — updates go live on next run after push. |
 | `userscript.user.js` | Tampermonkey shell. Adds "📷 Photos" to the shared FAB stack (`data-order` 30, below Audit 10 and Scrape 20). Auto-run defaults **off** (image loading is heavy); right-click the button to toggle. |
 | `bookmarklet.txt` | One-click alternative for machines without Tampermonkey. |
 
@@ -23,10 +23,14 @@ Works on any centre — nothing is hardcoded.
 
 1. Open a course page, click **📷 Photos**. The grid loads every applicant photo from the DataTable dataset (`show-photo/{id}` URLs, same-origin) — lazily, as you scroll.
 2. **⚡ Auto-scan** (Chrome only): uses the browser's on-device `FaceDetector` to try all four rotations per photo. Suggests a rotation when the face is only upright in another orientation, and a crop when the detected face is under ~4% of the frame (the passport-page case). Suggestions are amber badges — click to apply; nothing is applied automatically. Safari/Firefox don't have `FaceDetector`; the button is hidden and review is manual.
-3. **Manual controls per card:** ↺ ↻ 180° rotate, ✂ drag-crop (Esc cancels, ✂ again clears), ✓ mark reviewed, ⬇ download corrected JPEG (`{aid}_{name}.jpg`).
-4. **Keyboard:** ←/→ select card, `r` rotate clockwise, `d` toggle done, `s` download.
-5. **⬇ Download fixed** exports every photo marked ✓ that has a correction (allow multiple downloads when Chrome asks).
-6. Filters: All / ⚠ Suggested / ✓ Fixed / ⏳ Unreviewed.
+3. **✨ Auto-fix** (Chrome only): like Auto-scan, but it *applies* the fixes it's confident about instead of only suggesting them. `FaceDetector` gives no confidence score and will even detect upside-down faces, so confidence is derived from **landmarks** (eyes/nose/mouth via `fastMode:false`): a fix is auto-applied only when one orientation's landmarks are unambiguously upright (eyes level, above nose/mouth), or — when landmarks are unavailable — when a face is found at exactly one rotation. Everything else stays an amber suggestion, and photos with no detectable face are left for manual review.
+   - **Rotation** auto-applies on high confidence. **Crop** auto-applies only when high-confidence *and* there's a single face *and* it's centred enough that the crop won't clip it; otherwise the crop stays a suggestion.
+   - Auto-fixed cards get a blue border and a **✨ auto** badge and are **not** marked done — you still confirm each. Click **✓** to keep it, or click the blue badge to **revert** to the original. The **✨ Auto-fixed** filter shows exactly the batch awaiting your confirmation. Any manual rotate/crop also clears the auto flag.
+   - Nothing is uploaded to dipi by Auto-fix — it only writes local corrections.
+4. **Manual controls per card:** ↺ ↻ 180° rotate, ✂ drag-crop (Esc cancels, ✂ again clears), ✓ mark reviewed, ⬇ download corrected JPEG (`{aid}_{name}.jpg`).
+5. **Keyboard:** ←/→ select card, `r` rotate clockwise, `d` toggle done, `s` download.
+6. **⬇ Download fixed** exports every photo marked ✓ that has a correction (allow multiple downloads when Chrome asks).
+7. Filters: All / ⚠ Suggested / ✨ Auto-fixed / ✓ Fixed / ⏳ Unreviewed.
 
 Corrections persist in localStorage and re-apply whenever the same photo ID appears again (re-opening the course, or the same applicant in another course).
 
