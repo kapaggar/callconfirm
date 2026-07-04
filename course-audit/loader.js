@@ -408,6 +408,73 @@ ${sections.join('\n\n')}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  // ---- 8b. Per-applicant notify messages (Hindi) ----
+  // "notify" button on a finding opens WhatsApp to the applicant's own mobile
+  // with one combined message covering all of their fixable issues.
+  const maskId = (v) => {
+    const s = String(v == null ? '' : v).replace(/\s+/g, '');
+    return s.length <= 4 ? s : 'XXXX…' + s.slice(-4);
+  };
+
+  // Fields the applicant can fix themselves; anything not listed here
+  // (Conf No, Status, ...) is admin-side and gets no notify line.
+  const FIELD_HI = {
+    'Name': 'नाम', 'Gender': 'लिंग', 'Age': 'आयु', 'Address': 'पता',
+    'City': 'शहर', 'State': 'राज्य', 'DOB': 'जन्म तिथि',
+    'PhoneMobile': 'मोबाइल नंबर', 'Email': 'ईमेल',
+    'Emergency Name': 'आपातकालीन संपर्क का नाम',
+    'Emergency Contact No': 'आपातकालीन संपर्क नंबर',
+  };
+
+  // Hindi line for one finding, or null when the issue isn't applicant-fixable.
+  function notifyLine(f) {
+    switch (f.check) {
+      case 'missing_field': {
+        const hi = FIELD_HI[f.field];
+        return hi ? hi + ' की जानकारी नहीं भरी गई है' : null;
+      }
+      case 'email_missing':    return 'ईमेल नहीं भरा गया है';
+      case 'email_malformed':  return 'ईमेल सही नहीं है: ' + f.value;
+      case 'aadhar_masked':    return 'आधार नंबर अधूरा (masked) आया है — कृपया पूरा 12 अंकों का आधार नंबर भेजें';
+      case 'aadhar_length':    return 'आधार नंबर अधूरा/अशुद्ध है (' + maskId(f.value) + ', ' + f.len + ' अंक — 12 चाहिए)';
+      case 'id_missing':       return 'पहचान पत्र (आधार / PAN) की जानकारी नहीं है';
+      case 'id_type_mismatch': return 'दस्तावेज़ का प्रकार गलत चुना गया है (' + f.idType + ' में ' + f.looksLike + ' भरा है)';
+      case 'pan_missing':      return 'PAN नंबर नहीं है (दान रसीद के लिए आवश्यक)';
+      case 'pan_invalid':      return 'PAN नंबर सही नहीं है: ' + maskId(f.value);
+      case 'age_dob_mismatch': return 'आयु (' + f.listedAge + ') और जन्म तिथि मेल नहीं खाते — कृपया पुष्टि करें';
+      case 'emergency_eq_self':return 'आपातकालीन संपर्क नंबर आपका ही मोबाइल नंबर है — कृपया किसी और का नंबर दें';
+      case 'emergency_partial':return f.hasPhone ? 'आपातकालीन संपर्क का नाम नहीं दिया गया है' : 'आपातकालीन संपर्क नंबर नहीं दिया गया है';
+      default: return null; // Conf No / duplicates / status / policy checks are admin-side
+    }
+  }
+
+  function applicantE164(rowIdx) {
+    const digits = String((mapped[rowIdx] || {}).PhoneMobile || '').replace(/\D/g, '');
+    if (digits.length === 10) return normalizeE164('91', digits);
+    if (digits.length === 12 && digits.startsWith('91')) return normalizeE164('91', digits.slice(2));
+    return null;
+  }
+
+  function notifyLinesFor(rowIdx) {
+    const seen = new Set();
+    const lines = [];
+    findings.hardErrors.concat(findings.safety).forEach(f => {
+      if (f.row !== rowIdx) return;
+      const line = notifyLine(f);
+      if (line && seen.has(line) === false) { seen.add(line); lines.push(line); }
+    });
+    return lines;
+  }
+
+  function buildNotifyMessage(rowIdx) {
+    const lines = notifyLinesFor(rowIdx);
+    const first = String((mapped[rowIdx] || {}).Name || '').replace(/\(sevak\)/gi, '').trim().split(/\s+/)[0] || '';
+    return 'नमस्ते ' + first + ' जी 🙏\n' +
+      'आपका विपश्यना शिविर (' + courseLabel + ') का आवेदन मिला है, परंतु उसमें कुछ जानकारी अधूरी/अशुद्ध है:\n\n' +
+      lines.map((l, i) => (i + 1) + '. ' + l).join('\n') +
+      '\n\nकृपया सही जानकारी इसी नंबर पर WhatsApp करें। धन्यवाद।';
+  }
+
   // ---- 9. UI ----
   const MODE_KEY = 'courseAudit.mode';
   let mode = localStorage.getItem(MODE_KEY) || 'split';
@@ -546,9 +613,13 @@ ${sections.join('\n\n')}`;
     return arr.map(f => {
       const aid = mapped[f.row]?._aid;
       const editLink = aid ? `<a href="/app/${aid}/edit" target="_top">edit</a>` : '';
+      const canNotify = notifyLine(f) !== null && applicantE164(f.row) !== null;
+      const notifyBtn = canNotify
+        ? `<button class="notify-wa" data-notify="${f.row}" title="WhatsApp the applicant about their fixable issues">💬 notify</button>`
+        : '';
       const cls = CHECK_CLASS[f.check] || '';
       return `<div class="finding ${cls}">
-        ${editLink} <b>${f.name||''}</b><br>
+        ${editLink} ${notifyBtn} <b>${f.name||''}</b><br>
         <span class="desc">${describe(f)}</span>
       </div>`;
     }).join('');
@@ -638,6 +709,9 @@ ${sections.join('\n\n')}`;
     button:hover { background:#e8e8e8; }
     button.wa { background:#25D366; color:#fff; border-color:#1ea854; }
     button.wa:hover { background:#1ea854; }
+    button.notify-wa { background:#25D366; color:#fff; border-color:#1ea854; font-size:10px; padding:2px 7px; border-radius:10px; margin-right:2px; }
+    button.notify-wa:hover { background:#1ea854; }
+    button.notify-wa.sent { background:#9ad9b0; border-color:#9ad9b0; cursor:default; }
     button.primary { background:#06c; color:#fff; border-color:#04a; }
     button.primary:hover { background:#04a; }
     code { font-family:ui-monospace,'SF Mono',Consolas,monospace; font-size:11px; }
@@ -847,6 +921,22 @@ ${sections.join('\n\n')}`;
       }
     };
     $('ca-whatsapp').onclick = () => wa.openModal();
+
+    // Per-finding notify buttons — delegated on a root that's rebuilt with the
+    // panel each run (iframe body / panel div), so listeners never accumulate.
+    const rootEl = scope.getElementById('course-audit-panel') || scope.body;
+    rootEl.addEventListener('click', (e) => {
+      const btn = e.target.closest && e.target.closest('[data-notify]');
+      if (!btn || btn.classList.contains('sent')) return;
+      const row = parseInt(btn.getAttribute('data-notify'), 10);
+      const e164 = applicantE164(row);
+      if (!e164) return;
+      openWhatsAppFor(e164, buildNotifyMessage(row));
+      scope.querySelectorAll(`[data-notify="${row}"]`).forEach(b => {
+        b.classList.add('sent');
+        b.textContent = '✓ sent';
+      });
+    });
   }
 
   function buildSplitUI() {
