@@ -1,7 +1,8 @@
 // photo-review/review.js — applicant photo review overlay for dipi.vridhamma.org
 // Rotate / crop applicant photos that were uploaded sideways, upside down, or
-// zoomed out. Local-only: corrections live in localStorage (geometry, no pixels),
-// corrected JPEGs are exported via download. Nothing is written to dipi.
+// zoomed out. Local by default: corrections live in localStorage (geometry, no
+// pixels), corrected JPEGs are exported via download. dipi is only written via
+// the explicit ⬆dipi buttons (full-form-preserving round-trip, see below).
 //
 // Auto-suggest uses the browser's on-device FaceDetector API where available
 // (Chrome); manual rotate/crop works everywhere.
@@ -162,6 +163,7 @@
     const map = loadStore();
     map[item.photoId] = {
       rot: item.rot, crop: item.crop || null, done: !!item.done, auto: !!item.auto,
+      uploaded: !!item.uploaded, uploadedAt: item.uploadedAt || null,
       aid: item.aid || '', updatedAt: new Date().toISOString(),
     };
     saveStore(map);
@@ -334,9 +336,27 @@
 
   // Step 2: POST the reconstructed form (photo swapped), then re-GET and diff to
   // prove no other field drifted. Returns a result object; never throws.
-  async function commitUpload(item, prepared) {
+  // opts.recheckStale: re-fetch the form just before POSTing and abort if any
+  // field no longer matches the previewed snapshot — the dry-run modal can sit
+  // open a while, and POSTing a stale snapshot would silently overwrite an edit
+  // someone made on dipi in the meantime (a drift the post-verify can't see,
+  // because it diffs against our own snapshot). The fresh fetch also supplies
+  // current CSRF tokens. Used by the single-photo path; the batch loop's
+  // prepare→commit gap is milliseconds, so it skips the extra GET.
+  async function commitUpload(item, prepared, opts) {
+    opts = opts || {};
     try {
-      const body = buildUploadBody(prepared.entries, prepared.blob, prepared.filename);
+      let entries = prepared.entries;
+      if (opts.recheckStale) {
+        const freshResp = await fetch(editUrlFor(item.aid), { credentials: 'same-origin' });
+        if (!freshResp.ok) return { ok: false, stage: 'recheck', error: 'HTTP ' + freshResp.status };
+        const fresh = parseEditForm(await freshResp.text());
+        if (!fresh.form) return { ok: false, stage: 'recheck', error: 'applicant form not found (session expired?)' };
+        const stale = diffEntries(prepared.entries, fresh.entries, VERIFY_IGNORE);
+        if (stale.length) return { ok: false, stage: 'recheck', error: 'record changed on dipi since the preview (' + stale.join(', ') + ') — nothing sent; run ⬆dipi again to preview the current values' };
+        entries = fresh.entries;
+      }
+      const body = buildUploadBody(entries, prepared.blob, prepared.filename);
       const postResp = await fetch(editUrlFor(item.aid), { method: 'POST', credentials: 'same-origin', body });
       const landedOnEdit = /\/app\/\d+\/edit/.test(postResp.url);
       if (!postResp.ok || landedOnEdit) {
@@ -346,7 +366,7 @@
       const verifyResp = await fetch(editUrlFor(item.aid), { credentials: 'same-origin' });
       if (!verifyResp.ok) return { ok: true, stage: 'verify', warn: 'saved, but could not re-fetch to verify (HTTP ' + verifyResp.status + ')' };
       const after = parseEditForm(await verifyResp.text());
-      const drift = diffEntries(prepared.entries, after.entries, VERIFY_IGNORE);
+      const drift = diffEntries(entries, after.entries, VERIFY_IGNORE);
       if (drift.length) return { ok: true, stage: 'verify', drift, warn: 'saved, but these fields changed: ' + drift.join(', ') };
       return { ok: true, stage: 'done' };
     } catch (e) {
@@ -445,9 +465,25 @@
     });
   }
 
+  // After a successful upload dipi holds the corrected pixels, so the stored
+  // geometry must never be applied again: a persisted 90° would double-rotate
+  // the already-fixed photo on the next open, and a later batch upload would
+  // write that double-rotated image back to dipi. Bake the correction into the
+  // local bitmap as the new baseline (what dipi now serves), zero the geometry,
+  // and persist the uploaded marker so the guard survives reloads.
+  async function markUploaded(item) {
+    if (item.bitmap) {
+      try { item.bitmap = await createImageBitmap(correctedCanvas(item)); } catch (e) {}
+    }
+    item.rot = 0; item.crop = null; item.auto = false; item.suggestion = null;
+    item.uploaded = true;
+    item.uploadedAt = new Date().toISOString();
+    saveCorrection(item);
+  }
+
   function reportResult(item, res) {
-    if (res.ok && res.stage === 'done') { item.uploaded = true; toast('✓ Uploaded ' + item.name.split(' ')[0] + ' — all other fields preserved'); }
-    else if (res.ok && res.warn) { item.uploaded = true; alert('⚠ ' + item.name + ': ' + res.warn + '\n\nOpen their dipi edit page to double-check.'); }
+    if (res.ok && res.stage === 'done') { toast('✓ Uploaded ' + item.name.split(' ')[0] + ' — all other fields preserved'); }
+    else if (res.ok && res.warn) { alert('⚠ ' + item.name + ': ' + res.warn + '\n\nOpen their dipi edit page to double-check.'); }
     else { alert('✗ Upload failed for ' + item.name + ' (' + res.stage + '): ' + (res.error || 'unknown') + '\n\nNothing was saved.'); }
   }
 
@@ -458,9 +494,11 @@
     const go = await dryRunConfirm(item, prepared);
     if (!go) { toast('Cancelled — nothing sent'); return; }
     toast('Uploading…');
-    const res = await commitUpload(item, prepared);
+    const res = await commitUpload(item, prepared, { recheckStale: true });
+    if (res.ok) await markUploaded(item);
     reportResult(item, res);
     updateCard(item);
+    updatePills();
   }
 
   async function uploadAllFixed() {
@@ -473,12 +511,13 @@
       const prepared = await prepareUpload(item);
       if (!prepared.ok) { alert('Batch stopped at ' + item.name + ': ' + prepared.error + '\n\n' + okN + ' uploaded so far.'); return; }
       const res = await commitUpload(item, prepared);
+      if (res.ok) await markUploaded(item); // saved (even with drift) — never re-apply this geometry
       if (!res.ok || res.drift) {
         updateCard(item);
         alert('Batch stopped at ' + item.name + ':\n' + (res.error || res.warn) + '\n\n' + okN + ' uploaded successfully before this. Inspect this record on dipi before continuing.');
         return;
       }
-      item.uploaded = true; okN++;
+      okN++;
       updateCard(item);
       await new Promise(r => setTimeout(r, 400));
     }
@@ -620,7 +659,7 @@
       dipiBtn.classList.toggle('on', !!item.uploaded);
       dipiBtn.textContent = item.uploaded ? '✓dipi' : '⬆dipi';
       dipiBtn.title = !item.aid ? 'No application id — cannot upload'
-        : item.uploaded ? 'Already uploaded this session'
+        : item.uploaded ? 'Already uploaded — rotate/crop again to enable a new upload'
         : !hasCorrection ? 'Rotate or crop first'
         : 'Upload corrected photo to dipi (full-form-preserving, with dry-run)';
     }
@@ -634,6 +673,7 @@
     if (s.crop) item.crop = s.crop;
     item.suggestion = null;
     item.auto = false; // user chose it by hand
+    item.uploaded = false; // a new correction re-arms ⬆dipi
     saveCorrection(item);
     updateCard(item);
     updatePills();
@@ -656,6 +696,7 @@
     item.rot = ((item.rot + delta) % 360 + 360) % 360;
     item.crop = null; // crop coords are post-rotation; a new rotation invalidates them
     item.auto = false; // manual edit takes over from an auto fix
+    item.uploaded = false; // a new correction re-arms ⬆dipi (baseline is the uploaded photo)
     saveCorrection(item);
     updateCard(item);
   }
@@ -714,6 +755,7 @@
           ? clampCrop({ x: prev.x + crop.x * prev.w, y: prev.y + crop.y * prev.h, w: crop.w * prev.w, h: crop.h * prev.h })
           : crop;
         item.auto = false; // manual crop takes over from an auto fix
+        item.uploaded = false; // a new correction re-arms ⬆dipi
         saveCorrection(item);
         updateCard(item);
       }
@@ -912,7 +954,8 @@
           name: cleanName(r.name), aid: r.aid || '', confno: r.confno || '',
           status: r.app_status || '',
           rot: prev.rot || 0, crop: prev.crop || null, done: !!prev.done, auto: !!prev.auto,
-          bitmap: null, suggestion: null, el: null, uploaded: false,
+          uploaded: !!prev.uploaded, uploadedAt: prev.uploadedAt || null,
+          bitmap: null, suggestion: null, el: null,
         };
       })
       .filter(Boolean);

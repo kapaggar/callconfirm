@@ -69,6 +69,24 @@ The github.io PWA (`index.html`) is preserved as a fallback — secondary button
 | `course-audit/userscript.user.js` | Tampermonkey shell for the audit. Adds "Audit" button to shared FAB stack. |
 | `course-audit/bookmarklet.txt` | Audit bookmarklet. |
 
+### photo-review/ (separate concern, shares FAB stack)
+
+Rotate/crop applicant photos that were uploaded sideways or as whole passport pages. See
+`photo-review/README.md` for the full picture; short version:
+
+| File | Role |
+|---|---|
+| `photo-review/review.js` | Overlay: review grid, manual rotate/crop, FaceDetector auto-suggest + confidence-gated auto-fix, JPEG export, and write-back to dipi. Cache-busted like the other logic files. |
+| `photo-review/userscript.user.js` | Tampermonkey shell. "📷 Photos" on the shared FAB stack (`data-order` 30). Auto-run defaults off. |
+| `photo-review/bookmarklet.txt` | Bookmarklet alternative. |
+
+Write-back detail that matters: dipi has **no photo-only endpoint** — saving a photo resubmits
+the entire `/app/{aid}/edit` application form (Drupal 7, `form_id=dh_ma_applicant_form`,
+multipart POST, 302 on success). The upload preserves every live field, swaps only
+`files[upload_photo]`, re-checks for concurrent edits just before POSTing, and re-GETs after to
+diff for drift. After a verified upload the stored correction geometry is zeroed (persisted
+`uploaded` marker) so it can never double-apply to the already-fixed photo.
+
 ---
 
 ## Data flow
@@ -348,6 +366,8 @@ Page UI driving (programmatically select + click Update) requires the row to be 
 - Multi-language: tracker UI currently English, summaries can mix Hindi
 - Soft delete of sessions (current: nothing prunes old sessions; localStorage cap risks)
 - Conflict resolution UI when merging: today the new scrape wins on conflict, no surface to review
+- Photo review: run the first-use write-back checklist (photo-review/README.md) against one real record before trusting batch upload
+- Photo review: Safari/Firefox have no FaceDetector — consider a small WASM face model if manual-only review proves too slow there
 
 ---
 
@@ -358,6 +378,7 @@ Page UI driving (programmatically select + click Update) requires the row to be 
 3. **PAN field in dipi** — the audit's `pan_missing` check expects either `r.pancard` populated OR `ID Type=Pan card`. Currently runs against the scraper's mapped fields. Worth confirming the scraper exposes `pancard` correctly even when Aadhar is the primary ID. (Audit-side detail but affects which applicants get flagged.)
 4. **Custom status reason** — when dipi status is set to `Custom`, the `c` param carries the reason text. Tested? Or do we need to verify the request shape with a captured HAR?
 5. **Concurrent edit safety** — what if two admins both run the tracker and both change a dipi status for the same applicant within seconds? Today: last write wins on dipi's side, no notification. Probably acceptable for a small team.
+6. **Photo ID after upload** — does `show-photo/{id}` keep the same id once a corrected photo is written back, or does dipi mint a new file id? The double-apply guard in photo-review is safe either way, but knowing this decides whether the old URL can serve a stale cached image after upload.
 
 ---
 
