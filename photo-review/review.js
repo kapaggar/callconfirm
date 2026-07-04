@@ -23,6 +23,9 @@
   const SCAN_W = 320;      // downscale for face detection
   const TINY_FACE = 0.04;  // face area below this fraction => suggest crop
   const CROP_EXPAND = 2.6; // face box expansion factor for suggested crop
+  const LEVEL_TOL = 0.35;  // eye-line tilt tolerance (|Δy| / eye-spacing) for "upright"
+  const AREA_DOMINANCE = 1.5; // one orientation's face must be this× the next to win on area alone
+  const CROP_SAFE_MARGIN = 0.12; // face centre must be this far from any edge to auto-crop
 
   // ── Pure helpers (unit-testable via _internal) ──
   function escHtml(s) {
@@ -65,6 +68,82 @@
     return m ? m[1] : null;
   }
 
+  // ── Confidence from FaceDetector landmarks (pure, unit-testable) ──
+  // FaceDetector gives no confidence score and detects faces even upside-down, so
+  // to tell an upright orientation from a rotated one we inspect the landmarks
+  // (eyes/nose/mouth) of the detection made on an already-rotated canvas.
+  // Returns true/false, or null when landmarks are missing (→ fall back to area).
+  function landmarkOrientationUpright(landmarks) {
+    if (!Array.isArray(landmarks) || !landmarks.length) return null;
+    const pts = (type) => landmarks
+      .filter(l => l && l.type === type && Array.isArray(l.locations))
+      .flatMap(l => l.locations)
+      .filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+    const eyes = pts('eye');
+    const nose = pts('nose');
+    const mouth = pts('mouth');
+    if (eyes.length < 2 || (!nose.length && !mouth.length)) return null;
+    const [e1, e2] = eyes;
+    const spacing = Math.hypot(e2.x - e1.x, e2.y - e1.y);
+    if (spacing < 1e-6) return null;
+    const level = Math.abs(e1.y - e2.y) / spacing < LEVEL_TOL;
+    const avgEyeY = (e1.y + e2.y) / 2;
+    const mean = (arr) => arr.reduce((s, p) => s + p.y, 0) / arr.length;
+    // eyes must sit above the mouth (and above/at the nose) for an upright face
+    const vsMouth = mouth.length ? avgEyeY < mean(mouth) : true;
+    const vsNose = nose.length ? avgEyeY <= mean(nose) : true;
+    return level && vsMouth && vsNose;
+  }
+
+  // Is the face centred enough that an expanded crop won't clip it? (pure)
+  function cropIsSafe(box, margin) {
+    if (!box) return false;
+    const m = margin != null ? margin : CROP_SAFE_MARGIN;
+    const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    return cx > m && cx < 1 - m && cy > m && cy < 1 - m &&
+      box.x >= 0 && box.y >= 0 && box.x + box.w <= 1 && box.y + box.h <= 1;
+  }
+
+  // Turn per-rotation detections into a correction + confidence. (pure)
+  // dets: [{ rot, faces, area?, box?, landmarksOk? }] — one entry per rotation tried.
+  // Returns { rot?, crop?, confidence:'high'|'medium'|'low', auto:{rot,crop}, noFace? }.
+  function classifyDetections(dets, opts) {
+    opts = opts || {};
+    const tiny = opts.tinyFace != null ? opts.tinyFace : TINY_FACE;
+    const dom = opts.areaDominance != null ? opts.areaDominance : AREA_DOMINANCE;
+    const margin = opts.cropMargin != null ? opts.cropMargin : CROP_SAFE_MARGIN;
+    const withFace = (dets || []).filter(d => d && d.faces >= 1);
+    const none = { confidence: 'low', auto: { rot: false, crop: false }, noFace: true };
+    if (!withFace.length) return none;
+
+    const byArea = (a, b) => (b.area || 0) - (a.area || 0);
+    const landmarkWins = withFace.filter(d => d.landmarksOk === true).sort(byArea);
+    const anyLandmarkInfo = withFace.some(d => d.landmarksOk === true || d.landmarksOk === false);
+
+    let best, confidence;
+    if (landmarkWins.length) {
+      best = landmarkWins[0];
+      // one upright orientation = confident; several = only if one dominates on area
+      confidence = (landmarkWins.length === 1 ||
+        best.area > (landmarkWins[1].area || 0) * dom) ? 'high' : 'medium';
+    } else if (!anyLandmarkInfo) {
+      // no landmark data anywhere (platform gap): fall back to area heuristic
+      best = withFace.slice().sort(byArea)[0];
+      confidence = withFace.length === 1 ? 'high' : 'medium';
+    } else {
+      // landmarks existed but none confirmed upright → ambiguous, suggest only
+      best = withFace.slice().sort(byArea)[0];
+      confidence = 'medium';
+    }
+
+    const out = { confidence, auto: { rot: false, crop: false } };
+    if (best.rot) out.rot = best.rot;
+    if (best.box && (best.area || 0) < tiny) out.crop = expandFaceBox(best.box, CROP_EXPAND);
+    out.auto.rot = confidence === 'high' && !!best.rot;
+    out.auto.crop = confidence === 'high' && !!out.crop && best.faces === 1 && cropIsSafe(best.box, margin);
+    return out;
+  }
+
   // ── Corrections store (localStorage, geometry only) ──
   function loadStore() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; }
@@ -75,7 +154,7 @@
   function saveCorrection(item) {
     const map = loadStore();
     map[item.photoId] = {
-      rot: item.rot, crop: item.crop || null, done: !!item.done,
+      rot: item.rot, crop: item.crop || null, done: !!item.done, auto: !!item.auto,
       aid: item.aid || '', updatedAt: new Date().toISOString(),
     };
     saveStore(map);
@@ -272,9 +351,11 @@
   const hasFaceDetector = ('FaceDetector' in window);
   async function suggestFor(item) {
     if (!hasFaceDetector || !item.bitmap) return null;
-    const fd = new window.FaceDetector({ maxDetectedFaces: 1, fastMode: true });
-    let best = null;
-    for (const rot of [0, 90, 180, 270]) {
+    // fastMode:false yields landmarks (eyes/nose/mouth) so we can tell upright from
+    // upside-down; maxDetectedFaces:2 lets us spot group/ID-duplicate shots (no auto-crop).
+    const fd = new window.FaceDetector({ maxDetectedFaces: 2, fastMode: false });
+    const dets = [];
+    for (const rot of [0, 90, 270, 180]) {
       const [rw, rh] = rotatedDims(item.bitmap.width, item.bitmap.height, rot);
       const scale = Math.min(1, SCAN_W / rw);
       const c = document.createElement('canvas');
@@ -283,35 +364,34 @@
       drawRotated(c.getContext('2d'), item.bitmap, rot, c.width, c.height);
       let faces = [];
       try { faces = await fd.detect(c); } catch (e) { return null; }
-      if (faces.length) {
-        const b = faces[0].boundingBox;
-        const area = (b.width * b.height) / (c.width * c.height);
-        // prefer the rotation with the largest detected face; ties favor 0
-        if (!best || area > best.area * 1.15 || (rot === 0 && area > best.area * 0.85)) {
-          best = { rot, area, box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height } };
-        }
-      }
+      if (!faces.length) { dets.push({ rot, faces: 0 }); continue; }
+      faces.sort((a, b) => (b.boundingBox.width * b.boundingBox.height) - (a.boundingBox.width * a.boundingBox.height));
+      const b = faces[0].boundingBox;
+      dets.push({
+        rot, faces: faces.length,
+        area: (b.width * b.height) / (c.width * c.height),
+        box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height },
+        landmarksOk: landmarkOrientationUpright(faces[0].landmarks),
+      });
     }
-    if (!best) return { noFace: true };
-    const s = {};
-    if (best.rot !== 0) s.rot = best.rot;
-    if (best.area < TINY_FACE) s.crop = expandFaceBox(best.box, CROP_EXPAND);
-    return (s.rot !== undefined || s.crop) ? s : { ok: true };
+    return classifyDetections(dets, { tinyFace: TINY_FACE });
   }
 
   // ── State ──
   const state = { items: [], filter: 'all', sel: -1, scanning: false };
 
   function counts() {
-    const c = { all: state.items.length, suggested: 0, fixed: 0, unreviewed: 0 };
+    const c = { all: state.items.length, suggested: 0, autofixed: 0, fixed: 0, unreviewed: 0 };
     state.items.forEach(it => {
       if (it.suggestion && (it.suggestion.rot !== undefined || it.suggestion.crop)) c.suggested++;
+      if (it.auto && !it.done) c.autofixed++;
       if (it.done) c.fixed++; else c.unreviewed++;
     });
     return c;
   }
   function visible(it) {
     if (state.filter === 'suggested') return it.suggestion && (it.suggestion.rot !== undefined || it.suggestion.crop);
+    if (state.filter === 'autofixed') return it.auto && !it.done;
     if (state.filter === 'fixed') return it.done;
     if (state.filter === 'unreviewed') return !it.done;
     return true;
@@ -414,6 +494,7 @@
       #${OVERLAY_ID} .pr-title .sub { display:block; font-size:11px; color:#94a3b8; font-weight:400; }
       #${OVERLAY_ID} .pr-btn { border:none; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600; cursor:pointer; }
       #${OVERLAY_ID} .pr-btn-blue { background:#3b82f6; color:#fff; }
+      #${OVERLAY_ID} .pr-btn-indigo { background:#6366f1; color:#fff; }
       #${OVERLAY_ID} .pr-btn-gray { background:#475569; color:#fff; }
       #${OVERLAY_ID} .pr-btn-red { background:#dc2626; color:#fff; }
       #${OVERLAY_ID} .pr-pills { display:flex; gap:6px; width:100%; overflow-x:auto; padding-top:6px; }
@@ -424,6 +505,7 @@
       #${OVERLAY_ID} .pr-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.05); }
       #${OVERLAY_ID} .pr-card.sel { outline:3px solid #3b82f6; }
       #${OVERLAY_ID} .pr-card.done { opacity:.75; border-color:#86efac; }
+      #${OVERLAY_ID} .pr-card.auto { border-color:#818cf8; box-shadow:0 0 0 2px #c7d2fe; }
       #${OVERLAY_ID} .pr-canvas-wrap { position:relative; background:#0f172a; display:flex; justify-content:center; min-height:120px; }
       #${OVERLAY_ID} canvas { display:block; max-width:100%; }
       #${OVERLAY_ID} .pr-canvas-wrap.cropping { cursor:crosshair; }
@@ -431,6 +513,7 @@
       #${OVERLAY_ID} .pr-badge { position:absolute; top:6px; left:6px; background:#f59e0b; color:#fff; font-size:10px; font-weight:700;
         padding:3px 8px; border-radius:6px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.3); }
       #${OVERLAY_ID} .pr-badge.nf { background:#64748b; cursor:default; }
+      #${OVERLAY_ID} .pr-badge.auto { background:#6366f1; }
       #${OVERLAY_ID} .pr-meta { padding:8px 10px 2px; }
       #${OVERLAY_ID} .pr-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       #${OVERLAY_ID} .pr-sub { font-size:10px; color:#94a3b8; }
@@ -497,21 +580,30 @@
   function updateCard(item) {
     const el = item.el;
     el.classList.toggle('done', !!item.done);
-    // suggestion badge
-    let badge = el.querySelector('.pr-badge');
-    const s = item.suggestion;
-    const wants = s && (s.rot !== undefined || s.crop) ? ('suggest' + (s.rot !== undefined ? ' ↻' + s.rot + '°' : '') + (s.crop ? ' ✂ zoom' : '')) :
-                  (s && s.noFace ? 'no face found' : null);
-    if (wants) {
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.className = 'pr-badge';
-        el.querySelector('.pr-canvas-wrap').appendChild(badge);
-        badge.addEventListener('click', () => applySuggestion(item));
+    el.classList.toggle('auto', !!item.auto && !item.done);
+    // Badge is rebuilt each render so its click behaviour matches its mode:
+    //   auto (needs confirm) → click reverts;  suggestion → click applies.
+    const wrap = el.querySelector('.pr-canvas-wrap');
+    el.querySelector('.pr-badge')?.remove();
+    if (item.auto && !item.done) {
+      const badge = document.createElement('div');
+      badge.className = 'pr-badge auto';
+      badge.textContent = '✨ auto' + (item.rot ? ' ↻' + item.rot + '°' : '') + (item.crop ? ' ✂' : '') + ' — ✓ keep / tap to revert';
+      badge.title = 'Auto-fixed. Mark ✓ done to keep, or click this badge to revert to the original.';
+      badge.addEventListener('click', () => revertAuto(item));
+      wrap.appendChild(badge);
+    } else {
+      const s = item.suggestion;
+      const wants = s && (s.rot !== undefined || s.crop) ? ('suggest' + (s.rot !== undefined ? ' ↻' + s.rot + '°' : '') + (s.crop ? ' ✂ zoom' : '')) :
+                    (s && s.noFace ? 'no face found' : null);
+      if (wants) {
+        const badge = document.createElement('div');
+        badge.className = 'pr-badge' + (s && s.noFace ? ' nf' : '');
+        badge.textContent = wants;
+        if (!(s && s.noFace)) badge.addEventListener('click', () => applySuggestion(item));
+        wrap.appendChild(badge);
       }
-      badge.textContent = wants;
-      badge.classList.toggle('nf', !!(s && s.noFace));
-    } else if (badge) badge.remove();
+    }
     el.querySelector('[data-act="done"]').classList.toggle('on', !!item.done);
     el.querySelector('[data-act="crop"]').classList.toggle('on', !!item.crop);
     const dipiBtn = el.querySelector('[data-act="dipi"]');
@@ -534,15 +626,29 @@
     if (s.rot !== undefined) item.rot = s.rot;
     if (s.crop) item.crop = s.crop;
     item.suggestion = null;
+    item.auto = false; // user chose it by hand
     saveCorrection(item);
     updateCard(item);
     updatePills();
     toast('Applied suggestion for ' + item.name.split(' ')[0]);
   }
 
+  // Undo an auto-applied fix, back to the untouched original.
+  function revertAuto(item) {
+    item.rot = 0;
+    item.crop = null;
+    item.auto = false;
+    item.suggestion = null;
+    saveCorrection(item);
+    updateCard(item);
+    updatePills();
+    toast('Reverted ' + item.name.split(' ')[0] + ' to original');
+  }
+
   function rotate(item, delta) {
     item.rot = ((item.rot + delta) % 360 + 360) % 360;
     item.crop = null; // crop coords are post-rotation; a new rotation invalidates them
+    item.auto = false; // manual edit takes over from an auto fix
     saveCorrection(item);
     updateCard(item);
   }
@@ -600,6 +706,7 @@
         item.crop = prev
           ? clampCrop({ x: prev.x + crop.x * prev.w, y: prev.y + crop.y * prev.h, w: crop.w * prev.w, h: crop.h * prev.h })
           : crop;
+        item.auto = false; // manual crop takes over from an auto fix
         saveCorrection(item);
         updateCard(item);
       }
@@ -654,7 +761,7 @@
       else if (act === 'cw') rotate(item, 90);
       else if (act === 'flip') rotate(item, 180);
       else if (act === 'crop') {
-        if (item.crop) { item.crop = null; saveCorrection(item); updateCard(item); }
+        if (item.crop) { item.crop = null; item.auto = false; saveCorrection(item); updateCard(item); }
         else armCrop(item);
       }
       else if (act === 'done') { item.done = !item.done; saveCorrection(item); updateCard(item); updatePills(); }
@@ -677,7 +784,7 @@
     ov.querySelectorAll('.pr-pill').forEach(p => {
       const f = p.dataset.f;
       p.classList.toggle('active', state.filter === f);
-      p.textContent = { all: 'All ' + c.all, suggested: '⚠ Suggested ' + c.suggested, fixed: '✓ Fixed ' + c.fixed, unreviewed: '⏳ Unreviewed ' + c.unreviewed }[f];
+      p.textContent = { all: 'All ' + c.all, suggested: '⚠ Suggested ' + c.suggested, autofixed: '✨ Auto-fixed ' + c.autofixed, fixed: '✓ Fixed ' + c.fixed, unreviewed: '⏳ Unreviewed ' + c.unreviewed }[f];
     });
     state.items.forEach(it => { if (it.el) it.el.style.display = visible(it) ? '' : 'none'; });
   }
@@ -718,6 +825,42 @@
     updatePills();
     const c = counts();
     toast('Scan done — ' + c.suggested + ' photo(s) look wrong');
+  }
+
+  // ── Auto-fix: apply high-confidence corrections; suggest the rest ──
+  // Only writes local corrections and never marks a card done — every auto fix
+  // still needs a human ✓ (or a revert). Nothing is uploaded to dipi here.
+  async function autoFix() {
+    if (!hasFaceDetector) { toast('FaceDetector not available in this browser — manual review only'); return; }
+    if (state.scanning) return;
+    state.scanning = true;
+    const btn = document.getElementById('pr-autofix');
+    let n = 0, fixed = 0, suggested = 0, manual = 0;
+    for (const item of state.items) {
+      if (item.done) continue;
+      if (!item.bitmap && !item.loadError) await loadBitmap(item);
+      if (!item.bitmap) continue;
+      if (btn) btn.textContent = '✨ Fixing ' + (++n) + '/' + state.items.length + '…';
+      const s = await suggestFor(item);
+      item.suggestion = s;
+      if (s && s.auto && (s.auto.rot || s.auto.crop)) {
+        if (s.auto.rot && s.rot !== undefined) item.rot = s.rot;
+        if (s.auto.crop && s.crop) item.crop = s.crop;
+        item.auto = true;
+        item.suggestion = null; // consumed into a needs-confirm correction
+        saveCorrection(item);
+        fixed++;
+      } else if (s && (s.rot !== undefined || s.crop)) {
+        suggested++;
+      } else if (s && s.noFace) {
+        manual++;
+      }
+      updateCard(item);
+    }
+    if (btn) btn.textContent = '✨ Auto-fix';
+    state.scanning = false;
+    updatePills();
+    toast('Auto-fixed ' + fixed + ' · ' + suggested + ' suggested · ' + manual + ' need a manual look');
   }
 
   function onKeyNav(e) {
@@ -761,7 +904,7 @@
           photoId, url: r.photo,
           name: cleanName(r.name), aid: r.aid || '', confno: r.confno || '',
           status: r.app_status || '',
-          rot: prev.rot || 0, crop: prev.crop || null, done: !!prev.done,
+          rot: prev.rot || 0, crop: prev.crop || null, done: !!prev.done, auto: !!prev.auto,
           bitmap: null, suggestion: null, el: null, uploaded: false,
         };
       })
@@ -777,12 +920,14 @@
           <span class="sub">${escHtml(courseKey)} · ${state.items.length} photo(s) · corrections are local until you upload to dipi</span>
         </div>
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
+        ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
         <button class="pr-btn pr-btn-red" id="pr-close">✕ Close</button>
         <div class="pr-pills">
           <button class="pr-pill" data-f="all"></button>
           <button class="pr-pill" data-f="suggested"></button>
+          <button class="pr-pill" data-f="autofixed"></button>
           <button class="pr-pill" data-f="fixed"></button>
           <button class="pr-pill" data-f="unreviewed"></button>
         </div>
@@ -806,6 +951,7 @@
 
     ov.querySelector('#pr-close').addEventListener('click', close);
     ov.querySelector('#pr-scan')?.addEventListener('click', autoScan);
+    ov.querySelector('#pr-autofix')?.addEventListener('click', autoFix);
     ov.querySelector('#pr-dl-all').addEventListener('click', async () => {
       const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop));
       if (!fixed.length) { toast('No fixed photos yet — mark corrections ✓ done first'); return; }
@@ -826,6 +972,7 @@
     open, close,
     _internal: {
       rotatedDims, clampCrop, expandFaceBox, pruneCorrections, photoIdFromUrl, escHtml,
+      landmarkOrientationUpright, cropIsSafe, classifyDetections,
       controlToEntries, diffEntries, maskValue, buildUploadBody, uploadFilename,
     },
   };
