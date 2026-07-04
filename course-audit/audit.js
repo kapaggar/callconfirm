@@ -337,6 +337,12 @@
       if (s && !KNOWN_STATUS.has(s)) push(H, 'status_unknown', d, { value: d.raw.Status });
     });
 
+    // 11. Honorific/title prefix in Name (pollutes letters, Conf lists, dedup)
+    active.forEach(d => {
+      const p = namePrefix(d.raw.Name);
+      if (p) push(H, 'name_title_prefix', d, { prefix: p, value: d.raw.Name });
+    });
+
     // ===== SAFETY FLAGS =====
     const S = findings.safety;
 
@@ -400,12 +406,6 @@
         }
       }
     }
-
-    // 17. Honorific/title prefix in Name (data hygiene: pollutes letters, Conf lists, dedup)
-    active.forEach(d => {
-      const p = namePrefix(d.raw.Name);
-      if (p) push(SF, 'name_title_prefix', d, { prefix: p, value: d.raw.Name });
-    });
 
     // ===== CROSS-COURSE =====
     if (opts.allCourses && Array.isArray(opts.allCourses)) {

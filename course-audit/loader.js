@@ -454,7 +454,7 @@ ${sections.join('\n\n')}`;
     // Soft — gray
     shared_mobile:           'f-soft',
     shared_email_unrelated:  'f-soft',
-    name_title_prefix:       'f-soft',
+    name_title_prefix:       'f-missing',
     // Status / misc
     status_unknown:           'f-status',
     conf_gender_mismatch:     'f-status',
