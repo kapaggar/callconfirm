@@ -19,14 +19,16 @@ audit side. This file is only the quick orientation.
 | `index.html` | Legacy PWA fallback at github.io; duplicates the tracker UI code |
 | `sw.js`, `manifest.json`, `setup.html` | PWA plumbing for the fallback |
 | `course-audit/` | Separate rule-engine + panel (audit.js / loader.js / userscript.user.js) |
+| `photo-review/` | Applicant photo rotate/crop overlay, local-only (review.js / userscript.user.js) |
 
 ## Conventions and gotchas
 
-- `scraper.js`, `tracker-inline.js`, `course-audit/audit.js`, `course-audit/loader.js` are
-  fetched with `?v=Date.now()` cache-busting — changes go live on next run after push.
-  The two `.user.js` shells only update via Tampermonkey daily check; bump `@version`.
+- `scraper.js`, `tracker-inline.js`, `course-audit/audit.js`, `course-audit/loader.js`,
+  `photo-review/review.js` are fetched with `?v=Date.now()` cache-busting — changes go
+  live on next run after push. The `.user.js` shells only update via Tampermonkey daily
+  check; bump `@version`.
 - Changes to tracker UI logic usually need mirroring in `index.html` (same code, PWA copy).
-- Both userscripts share the `#dipi-fab-stack` FAB convention (`data-order`: audit 10, scrape 20).
+- All userscripts share the `#dipi-fab-stack` FAB convention (`data-order`: audit 10, scrape 20, photos 30).
 - Tracker call-status is deliberately decoupled from dipi status; never auto-sync them.
 - `localStorage.dipiTracker.sessionIndex` (keyed `centreid/courseid`) is how the scraper detects
   an in-progress session; the tracker writes it on import and every save.
