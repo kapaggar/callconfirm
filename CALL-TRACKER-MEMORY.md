@@ -1,0 +1,389 @@
+# Call Tracker — Project Memory Dump
+
+Purpose: hand-off document so a future Claude session (or human) can pick this up cold. Captures what exists, why decisions were made, and what's left open.
+
+Repo: `kapaggar/callconfirm` on GitHub. Live at `https://kapaggar.github.io/callconfirm/`.
+
+---
+
+## What problem this solves
+
+Kapil runs Dhammasudha Vipassana Dhyan Kendra (centre ID 63 in dipi.vridhamma.org). Before each 10-day course, applicants in "Expected" or "Confirmed" state need to be called to confirm attendance. Dipi (Drupal app) shows them in a paginated DataTable but has no calling workflow — no per-applicant call status, no notes, no attempt counter. This project layers that workflow on top of dipi without backend changes.
+
+There are TWO related tools in the same repo, deliberately decoupled:
+
+1. **Call Tracker** (this document) — calling dashboard for the centre admin
+2. **Course Audit** (separate but shares the FAB stack) — data-quality checks before courses
+
+The audit is documented in `course-audit/README.md`. This document is just the call-tracker side.
+
+---
+
+## Architecture
+
+```
+dipi.vridhamma.org/search-course/63/{courseid}
+│
+│ (Tampermonkey userscript auto-loads on page) OR (bookmarklet click)
+│
+├─ scraper.js
+│  ├─ Detects DataTables instance
+│  ├─ Triggers row expansion via jQuery (or fallback click)
+│  ├─ Reads name / phones / email / status / Conf No / AID / group code
+│  ├─ Builds apps[] array in memory
+│  └─ Shows results overlay with action buttons
+│
+└─ tracker-inline.js (loaded on demand when user clicks "Open Inline Call Tracker")
+   ├─ Full-screen overlay on dipi page (scoped CSS under #dipi-tracker-overlay)
+   ├─ IndexedDB at dipi.vridhamma.org origin (key: vcall_inline)
+   ├─ Per-applicant call status, attempts counter, notes
+   ├─ WhatsApp letter fetch via dipi's own AES-CBC URL crypto
+   └─ Inline dipi status changer (GET /change-status/{aid}?s=...)
+```
+
+Both overlays are mutually exclusive: opening tracker closes scraper. Tracker has a Re-scrape button that closes itself and re-invokes the scraper.
+
+The github.io PWA (`index.html`) is preserved as a fallback — secondary button in scraper results screen. Same data model, opens in new tab via `#dipi=<base64-json>` URL hash.
+
+---
+
+## Files in the repo
+
+### Root (for the scraper + tracker)
+
+| File | Role |
+|---|---|
+| `scraper.js` (v7) | Scrapes the DataTable on dipi search-course pages. Offers "Open Inline Call Tracker" (primary) and "Open in PWA" (fallback). Exposes `window.DipiScraper.run()` for re-scrape from tracker. |
+| `tracker-inline.js` | The calling dashboard. Renders as full-screen overlay on dipi page. Exposes `window.DipiTracker.{open, import, close}`. |
+| `scraper.user.js` | Tampermonkey shell. Adds floating FAB buttons. Auto-runs scraper on /search-course/ when DataTables is ready. `@updateURL` set, so audit-logic edits propagate without reinstall. |
+| `scraper-bookmarklet.txt` | Bookmarklet alternative to the userscript. Sets `_DIPI_PWA_URL` + `_DIPI_TRACKER_BASE`. |
+| `index.html` | Legacy PWA at github.io. Still works. Receives data via `#dipi=...` hash. Same UI code as `tracker-inline.js`. |
+| `manifest.json`, `sw.js` | PWA manifest + service worker for the github.io version. |
+
+### course-audit/ (separate concern, but shares FAB stack)
+
+| File | Role |
+|---|---|
+| `course-audit/audit.js` | Rule engine. Hard errors, safety flags, cross-course duplicates, sensitive field counts. |
+| `course-audit/loader.js` | Adapter for dipi page. Renders audit panel as iframe (split-view) or floating overlay. |
+| `course-audit/userscript.user.js` | Tampermonkey shell for the audit. Adds "Audit" button to shared FAB stack. |
+| `course-audit/bookmarklet.txt` | Audit bookmarklet. |
+
+---
+
+## Data flow
+
+### Scrape
+
+`scraper.js` reads dipi's inline `var dataset = [...]` indirectly. Since that variable is scoped inside `$(document).ready()`, it's not directly reachable. Instead the scraper triggers DataTables row expansion to populate the detail rows in DOM, then text-parses each row.
+
+For each applicant it extracts:
+```js
+{
+  name, mobile, home, office, email,
+  status,    // e.g. "Expected"
+  type,      // e.g. "New Female"
+  age,
+  group,     // 2-letter code: NM/OM/SM/NF/OF/SF
+  aid        // application ID from /app/{aid}/edit links
+}
+```
+
+Status filter is hardcoded to `Expected,Confirmed` in the URL the picker navigates to. Centre ID is hardcoded to `63`.
+
+### Import into tracker
+
+`window.DipiTracker.import(apps, title, dates, courseType)`:
+
+1. Normalize phone numbers (`fmtPhone` — adds +91 prefix to 10-digit, leaves international as-is)
+2. Build per-applicant record with tracker fields:
+   ```js
+   {
+     id, name, mobile, home, office, email,
+     gender, age, city, group, aid,
+     dipiStatus,                 // <— scraped from dipi (e.g. "Expected (NF13)")
+     status: 'pending',          // <— tracker's own call-status, decoupled from dipiStatus
+     attempts: 0,
+     lastAttempt: null,
+     notes: ''
+   }
+   ```
+3. **Smart merge**: if a session with the same title+dates already exists, preserve `status`, `attempts`, `lastAttempt`, `notes` for any applicant matched by AID. Lets weekly workflow (scrape Mon → call → re-scrape Wed) pick up new applicants without losing call progress.
+4. Store in IndexedDB and render
+
+### Per-applicant actions in the tracker
+
+When a card is expanded:
+
+1. **Phone buttons** — `tel:` links, increment attempts on click
+2. **WhatsApp button** — fetches DIPI's personalized letter via `applicant.vridhamma.org/l.php?a={authCode}`, then opens `wa.me/<phone>?text=<letter>`. Falls back to a generic Hindi template if AID missing or fetch fails.
+3. **Dipi status changer** — dropdown + Update button. Calls `GET /change-status/{aid}?s={NewStatus}&l=&c={custom}`. Updates `a.dipiStatus` on success.
+4. **Call-status grid** — sets the tracker's own status (Pending / Confirmed / Cancelled / No Answer / Callback / Tentative / Left Msg). Independent of dipi status.
+5. **Notes textarea** — saved on every input
+
+### Tracker status vs Dipi status — why decoupled
+
+These serve different purposes:
+
+- **Dipi status** = the authoritative record at VRI. Changing it is consequential (e.g. Confirmed assigns a Conf No, kicks off accommodation allotment).
+- **Tracker call-status** = "did I get hold of this person?" Internal workflow. Multiple back-and-forth states (Callback, Left Msg, Tentative) that don't fit dipi's vocabulary.
+
+A person can be "Confirmed in tracker" (you talked to them and they said yes) but the centre admin might wait until other checks complete before committing them as Confirmed in dipi. Keeping them decoupled avoids forcing a dipi change every time a call status updates.
+
+---
+
+## DIPI letter system (carried from index.html)
+
+DIPI generates personalized WhatsApp letters at `https://applicant.vridhamma.org/l.php?a={authCode}` where `authCode` is double-base64 of AES-256-CBC encryption of `{aid}-{msgType}`.
+
+Constants (from `index.html`, hardcoded — reverse-engineered from dipi PHP `simple_crypt`):
+```
+KEY = '9bd6ed6b014206c76f7a7e6b49d535e9'   (32-byte string, used as-is — first 32 bytes of full key)
+IV  = '60b79f716fb5172a'                    (16-byte string)
+MSG_TYPE = 6421                              (FULL_INFO)
+```
+
+Encryption uses Web Crypto API `crypto.subtle.encrypt({ name: 'AES-CBC', iv })`. Result: `base64(base64(ciphertext))` to match PHP's `base64_encode(openssl_encrypt(...))` (openssl_encrypt already returns base64).
+
+After fetch, the HTML response is parsed via DOMParser, body innerText extracted, first 2 lines dropped (matches the `tail -n +3` in the original bash script).
+
+---
+
+## DIPI status change endpoint
+
+Captured from HAR file 2026-05-18:
+
+```
+GET /change-status/{aid}?s={NewStatus}&l={lengthCode}&c={customText}
+Headers:
+  X-Requested-With: XMLHttpRequest
+  Accept: application/json, text/javascript, */*; q=0.01
+  Cookie: <session>
+Response: 200 application/json
+  {"status":"OK", "msg":"", "confno":"SM4", "newstatus":""}
+```
+
+Status values from dipi's dropdown: `Confirmed, Cancelled, Clarification, Duplicate, PreConfirmation, Regret, Rejected, Review, WaitList, Custom`.
+
+Notes:
+- `l` param meaning is unknown. Captured request had `l=4230`. Sending `l=` (empty) worked in testing. If a future failure points to this, may need to investigate.
+- `c` is only meaningful when `s=Custom`.
+- Failure response is `{"status":"FAIL", "msg":"..."}` (inferred — not captured).
+
+---
+
+## Storage model
+
+IndexedDB at `dipi.vridhamma.org` origin:
+
+- Database: `vcall_inline`
+- Version: 1
+- Object store: `sessions`, keyPath `id`
+
+Session record:
+```js
+{
+  id: 's-<timestamp>',
+  title: '10 Day / 2026 / 20th-May to 31st-May',
+  dates: '20th-May to 31st-May 2026',
+  courseType: '10 Day',
+  createdAt: '<iso>',
+  updatedAt: '<iso>',
+  count: 96,
+  applicants: [<see structure above>]
+}
+```
+
+Last 12 sessions retained automatically (cap not yet enforced; nothing prunes old sessions today).
+
+**Separate from PWA storage** at github.io — different origin, different IndexedDB. To copy a session across origins, use the PWA's "Paste from DIPI" feature.
+
+### Session index (localStorage mirror)
+
+Tracker also writes a small synchronous-readable summary to `localStorage.dipiTracker.sessionIndex`:
+
+```js
+{
+  "63/66877": {
+    sessionId: "s-1234567890",
+    count: 96,
+    withProgress: 12,
+    updatedAt: "<iso>"
+  },
+  "63/66878": { ... }
+}
+```
+
+Keyed by `centreid/courseid`. Updated on every import and on every saveApplicants(). The scraper reads this synchronously (no IndexedDB load needed) to detect whether the current course has an in-progress session and adapt the primary button label.
+
+---
+
+## FAB stack convention (shared with audit)
+
+Both userscripts append to `#dipi-fab-stack`, a flex column at bottom-right of the page. Each button declares `data-order`; stack re-sorts on every append.
+
+Layout (top to bottom):
+
+| Order | Button | Color | Source |
+|---|---|---|---|
+| 10 | ↻ Audit | blue | audit userscript |
+| 20 | 🔄 Scrape | blue | scraper userscript |
+
+The earlier "Open Tracker" FAB (order 5) was removed in v1.1.0 — it tried to resume the last session regardless of which course page the user was on, which led to confusing cross-course overlays. Resume is now surfaced from the scraper results screen instead: when a session for the current course exists in `localStorage.dipiTracker.sessionIndex`, the primary button label flips to "Resume Calling (N marked)".
+
+Each button: 140px min-width, 10px×14px padding, 13px font, 6px radius, drop shadow. Wrapper uses `pointer-events:none`, buttons use `pointer-events:auto` so gaps don't block underlying page clicks.
+
+Right-click on Scrape/Audit toggles auto-run via localStorage (`dipiTracker.autorun`, `courseAudit.autorun`).
+
+---
+
+## Public APIs
+
+### `window.DipiScraper`
+
+```js
+DipiScraper.run()    // run scraper on current /search-course/ page
+DipiScraper.pick()   // show course picker (used on /centre/ pages)
+```
+
+### `window.DipiTracker`
+
+```js
+DipiTracker.open()    // show tracker overlay with last session loaded
+DipiTracker.import(apps, title, dates, courseType)  // create or merge session, then open
+DipiTracker.close()   // tear down overlay
+```
+
+Scraper auto-loads tracker-inline.js when needed. Userscript can call `DipiTracker.open()` directly to resume last session without re-scraping.
+
+---
+
+## Userscript install
+
+Both userscripts live at:
+- `https://kapaggar.github.io/callconfirm/scraper.user.js`
+- `https://kapaggar.github.io/callconfirm/course-audit/userscript.user.js`
+
+`@match` patterns:
+- Scraper: `https://dipi.vridhamma.org/search-course/*`, `/centre/*`, plus wildcard `*.vridhamma.org` versions
+- Audit: `https://dipi.vridhamma.org/search-course/*`, plus wildcard
+
+`@updateURL` set on both. Tampermonkey checks daily.
+
+Real audit logic and tracker logic live in `audit.js` / `loader.js` / `tracker-inline.js` / `scraper.js` — fetched fresh every run via `?v=Date.now()`. Userscript only updates when the shell itself changes (rare).
+
+---
+
+## Bookmarklet alternative
+
+```javascript
+javascript:void(function(){
+  window._DIPI_PWA_URL='https://kapaggar.github.io/callconfirm';
+  window._DIPI_TRACKER_BASE='https://kapaggar.github.io/callconfirm';
+  var s=document.createElement('script');
+  s.src='https://kapaggar.github.io/callconfirm/scraper.js?v='+Date.now();
+  document.head.appendChild(s)
+}());
+```
+
+---
+
+## Exports from tracker
+
+Implemented in tracker-inline.js:
+
+| Format | Use |
+|---|---|
+| Copy for WhatsApp | Clipboard text grouped by status, emoji icons |
+| CSV | Excel-compatible, all fields including AID + notes |
+| Print / PDF | New tab, styled HTML, browser print dialog |
+| AID:Phone | Plain text for `improved_aid.sh` bash script |
+
+---
+
+## Key decisions and history
+
+### Why a separate tracker at dipi origin vs only the PWA?
+
+The PWA at github.io worked but required navigation away from dipi. On mobile this means lost context, fresh page load, and re-typing the URL to come back. Inline rendering keeps everything in one tab. PWA kept as fallback for users without Tampermonkey or when sharing data across machines.
+
+### Why IndexedDB and not localStorage?
+
+`courseAudit.cache` (the audit's cross-course cache) uses localStorage because it's small and structured. The call tracker stores per-applicant notes for hundreds of people across multiple courses — localStorage hits the 5MB limit fast and lacks indexing.
+
+### Why preserve PWA fallback?
+
+(1) Existing bookmarklets in the field shouldn't break. (2) Some users may not have Tampermonkey. (3) The PWA can be opened on a different machine via the `#dipi=...` hash URL — useful for handing off a calling list.
+
+### Why merge sessions on re-scrape instead of always creating new?
+
+Real workflow: scrape Monday, call all week, re-scrape Wednesday because 5 new applicants registered. Without merge, Wednesday's scrape would wipe Monday's call progress. Merge by title+dates+AID preserves notes/status/attempts.
+
+### Why decouple tracker call-status from dipi status?
+
+Tracker status answers "did I get hold of them, what did they say?". Dipi status is the authoritative VRI record with side effects (Conf No assignment, accommodation allotment). Same person could be tracker-Callback (you've tried 3 times, no answer) while still dipi-Expected (the centre hasn't given up on them).
+
+### Why share FAB stack between userscripts?
+
+Originally each userscript created its own `position:fixed; bottom:18px right:18px` button. With audit + scraper + tracker all installed, three buttons stacked invisibly on top of each other. Shared `#dipi-fab-stack` with `data-order` sort makes them visible side by side without coupling the userscripts' internal logic.
+
+### Why call dipi's `/change-status` endpoint directly instead of driving the page UI?
+
+Page UI driving (programmatically select + click Update) requires the row to be visible in the DataTable. If the row is on another page, filtered out, or the tracker is open over the page, it fails. Direct GET works regardless of DOM state. Same auth (session cookie), same endpoint as dipi's own JS uses.
+
+---
+
+## Things NOT yet implemented (roadmap)
+
+- Bulk dipi status change (e.g. "mark all No-Answer applicants as Cancelled in dipi")
+- Two-way sync: when tracker call-status hits "Confirmed", offer to also flip dipi status
+- Background letter pre-fetch for all pending applicants (cache letters before calling)
+- Background dial: `tel:` URI handler chain for sequential calling
+- SMS bulk via `sms:` URL handler on Android
+- Cross-origin session sync between dipi and github.io PWA (currently manual via Paste from DIPI)
+- Diff mode in re-scrape: highlight what changed since last run
+- Stats panel: avg attempts to confirm, time-of-day patterns, etc.
+- Unit tests on `tracker-inline.js` import/merge logic
+- Custom WhatsApp templates per course type (10-day vs STP)
+- Multi-language: tracker UI currently English, summaries can mix Hindi
+- Soft delete of sessions (current: nothing prunes old sessions; localStorage cap risks)
+- Conflict resolution UI when merging: today the new scrape wins on conflict, no surface to review
+
+---
+
+## Open questions for next session
+
+1. **`l` parameter** in /change-status — observed value 4230. What does it represent? Empty string seems to work, but worth confirming with a few more captures.
+2. **Failure shape** — `{"status":"FAIL", ...}` is inferred. Capture an actual failure (e.g. invalid AID) to see the real schema.
+3. **PAN field in dipi** — the audit's `pan_missing` check expects either `r.pancard` populated OR `ID Type=Pan card`. Currently runs against the scraper's mapped fields. Worth confirming the scraper exposes `pancard` correctly even when Aadhar is the primary ID. (Audit-side detail but affects which applicants get flagged.)
+4. **Custom status reason** — when dipi status is set to `Custom`, the `c` param carries the reason text. Tested? Or do we need to verify the request shape with a captured HAR?
+5. **Concurrent edit safety** — what if two admins both run the tracker and both change a dipi status for the same applicant within seconds? Today: last write wins on dipi's side, no notification. Probably acceptable for a small team.
+
+---
+
+## How to pick this up cold (instructions for next Claude)
+
+1. Read this document first
+2. Read `course-audit/README.md` if asked about audit
+3. Files to view before suggesting changes:
+   - `tracker-inline.js` (the dashboard — 600+ lines)
+   - `scraper.js` (the data extraction — 350+ lines)
+   - `scraper.user.js` (Tampermonkey shell)
+   - `course-audit/userscript.user.js` if FAB stack is touched
+4. Test changes against the four 2026 course XLSX files Kapil shared earlier — the audit findings were calibrated against them and shouldn't regress.
+5. Before adding rules to audit: ask whether they should be hard errors (block) vs soft flags (advisory). Kapil's preference: surface but don't block, unless legally mandated (e.g. PAN for tax receipts).
+6. Before adding tracker features: ask whether they should sync to dipi or stay local. Default: local.
+
+---
+
+## Kapil's working style (preference notes)
+
+From the conversation:
+
+- Answer first, then reasoning. Direct, technically precise.
+- Surface tradeoffs explicitly. Flag uncertainty.
+- En-dashes/hyphens, no em-dashes.
+- Suggest commit messages when shipping changes.
+- Don't suggest switching frameworks/cloud/datastore unprompted.
+- Test against real data before declaring done.
+- Conservative on safety-related defaults (e.g. tracker call-status doesn't auto-trigger dipi change).

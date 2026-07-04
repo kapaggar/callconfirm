@@ -322,8 +322,9 @@
     };
 
     document.getElementById('_ds-csv').onclick = function () {
+      var esc = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
       var csv = 'S.No,Name,AID,Mobile,Home,Office,Email,Status,Group,Type,Age\n';
-      apps.forEach(function (a, i) { csv += (i + 1) + ',"' + a.name + '",' + a.aid + ',' + a.mobile + ',' + a.home + ',' + a.office + ',' + a.email + ',"' + a.status + '",' + a.group + ',"' + a.type + '",' + a.age + '\n'; });
+      apps.forEach(function (a, i) { csv += (i + 1) + ',' + esc(a.name) + ',' + a.aid + ',' + a.mobile + ',' + a.home + ',' + a.office + ',' + esc(a.email) + ',' + esc(a.status) + ',' + a.group + ',' + esc(a.type) + ',' + a.age + '\n'; });
       var b = new Blob([csv], { type: 'text/csv' }); var u = URL.createObjectURL(b);
       var l = document.createElement('a'); l.href = u; l.download = 'dipi_' + cleanTitle.replace(/[^a-zA-Z0-9]/g, '_') + '.csv'; l.click();
     };

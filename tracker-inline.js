@@ -177,8 +177,14 @@
     if (num === '0' || num.toLowerCase() === 'na') return '';
     num = num.replace(/[^0-9+]/g, '');
     if (num.startsWith('+')) return num;
-    if (num.length < 10) num = '0'.repeat(10 - num.length) + num;
-    return '+91' + num;
+    if (num.length === 10) return '+91' + num;
+    if (num.length === 12 && num.startsWith('91')) return '+' + num;
+    return num; // too short / unusual — keep as-is rather than invent digits
+  }
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function timeAgo(iso) {
     if (!iso) return '';
@@ -196,9 +202,12 @@
   // "centreid/courseid". Lets the scraper detect existing sessions for
   // the current course without loading the tracker.
   const SESSION_INDEX_KEY = 'dipiTracker.sessionIndex';
-  function writeSessionIndexEntry(apps, sessionId) {
-    if (!apps.length || !apps[0]._centreid || !apps[0]._courseid) return;
-    const courseKey = apps[0]._centreid + '/' + apps[0]._courseid;
+  function courseKeyFromLocation() {
+    const m = location.pathname.match(/\/search-course\/(\d+)\/(\d+)/);
+    return m ? m[1] + '/' + m[2] : '';
+  }
+  function writeSessionIndexEntry(courseKey, apps, sessionId) {
+    if (!courseKey || !apps.length) return;
     let idx = {};
     try { idx = JSON.parse(localStorage.getItem(SESSION_INDEX_KEY) || '{}'); } catch {}
     const withProgress = apps.filter(a => a.status && a.status !== 'pending').length;
@@ -234,6 +243,7 @@
     apps.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
     const cleanTitle = title || 'DIPI Course ' + new Date().toLocaleDateString('en-IN');
+    const courseKey = courseKeyFromLocation();
     const sid = 's-' + Date.now();
     // Try to find an existing session for the same course (by title) — merge instead of create
     const all = await dbGetAll('sessions');
@@ -256,8 +266,9 @@
       existing.dates = dates || existing.dates;
       existing.courseType = courseType || existing.courseType;
       existing.updatedAt = new Date().toISOString();
+      existing.courseKey = existing.courseKey || courseKey;
       await dbPut('sessions', existing);
-      writeSessionIndexEntry(apps, existing.id);
+      writeSessionIndexEntry(existing.courseKey, apps, existing.id);
       const fresh = await dbGetAll('sessions');
       setState({
         sessions: fresh, activeId: existing.id, applicants: apps,
@@ -267,10 +278,10 @@
       showToast('Refreshed ' + apps.length + ' applicants');
       return;
     }
-    const sess = { id: sid, title: cleanTitle, createdAt: new Date().toISOString(),
+    const sess = { id: sid, title: cleanTitle, courseKey, createdAt: new Date().toISOString(),
                    count: apps.length, applicants: apps, dates: dates || '', courseType: courseType || '' };
     await dbPut('sessions', sess);
-    writeSessionIndexEntry(apps, sid);
+    writeSessionIndexEntry(courseKey, apps, sid);
     const fresh = await dbGetAll('sessions');
     setState({
       sessions: fresh, activeId: sid, applicants: apps,
@@ -294,7 +305,7 @@
       s.applicants = state.applicants;
       s.updatedAt = new Date().toISOString();
       await dbPut('sessions', s);
-      writeSessionIndexEntry(state.applicants, state.activeId);
+      writeSessionIndexEntry(s.courseKey || courseKeyFromLocation(), state.applicants, state.activeId);
     }
   }
   function updateApp(id, patch) {
@@ -303,12 +314,14 @@
   }
   function markStatus(id, status) {
     const a = state.applicants.find(x => x.id === id);
+    if (!a || !STATUSES[status]) return;
     const inc = ['no_answer', 'left_message'].includes(status);
     updateApp(id, { status, attempts: inc ? (a.attempts || 0) + 1 : a.attempts, lastAttempt: new Date().toISOString() });
     showToast(a.name.split(' ')[0] + ' → ' + STATUSES[status].label);
   }
   function logAttempt(id) {
     const a = state.applicants.find(x => x.id === id);
+    if (!a) return;
     updateApp(id, { attempts: (a.attempts || 0) + 1, lastAttempt: new Date().toISOString() });
   }
 
@@ -355,18 +368,19 @@
     A.forEach(a => { stats[a.status] = (stats[a.status] || 0) + 1; });
     const rows = A.map((a, i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8f9fa'}">
       <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${i + 1}</td>
-      <td style="padding:6px 8px;border:1px solid #ccc;font-weight:500">${a.name}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;font-weight:500">${escHtml(a.name)}</td>
       <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.mobile}</td>
       <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.home}</td>
       <td style="text-align:center;padding:6px 4px;border:1px solid #ccc;font-weight:600;color:${STATUSES[a.status]?.color || '#666'}">${STATUSES[a.status]?.label || a.status}</td>
       <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${a.attempts}</td>
-      <td style="padding:6px 8px;border:1px solid #ccc;font-size:10px;color:#666">${a.notes || ''}</td></tr>`).join('');
+      <td style="padding:6px 8px;border:1px solid #ccc;font-size:10px;color:#666">${escHtml(a.notes || '')}</td></tr>`).join('');
     const w = window.open('', '_blank');
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${state.courseTitle}</title><style>
+    if (!w) { showToast('Popup blocked — allow popups to print'); return; }
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(state.courseTitle)}</title><style>
       @page{margin:10mm}body{font-family:-apple-system,sans-serif;font-size:12px;margin:0;padding:10px}
       h1{font-size:16px;text-align:center;margin:0 0 4px}.sub{text-align:center;color:#666;margin-bottom:10px;font-size:11px}
       table{width:100%;border-collapse:collapse}th{background:#2c3e50;color:#fff;padding:7px 4px;border:1px solid #2c3e50;font-size:11px}
-      </style></head><body><h1>${state.courseTitle}</h1>
+      </style></head><body><h1>${escHtml(state.courseTitle)}</h1>
       <div class="sub">✅ ${stats.confirmed || 0} Confirmed | ❌ ${stats.cancelled || 0} Cancelled | ⏳ ${stats.pending || 0} Pending | Total: ${A.length}</div>
       <table><tr><th>#</th><th>Name</th><th>Mobile</th><th>Home</th><th>Status</th><th>Att.</th><th>Notes</th></tr>${rows}</table>
       <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
@@ -469,6 +483,9 @@
   function render() {
     const ov = ensureOverlay();
     const { activeId, applicants: A, courseTitle, filter, search, expandedId, showExport, toast } = state;
+    // innerHTML replacement destroys the focused search box; remember it so typing isn't interrupted
+    const searchHadFocus = document.activeElement && document.activeElement.id === 'dt-search-box';
+    const searchCaret = searchHadFocus ? document.activeElement.selectionStart : 0;
 
     if (!activeId || A.length === 0) {
       ov.innerHTML = `
@@ -479,7 +496,7 @@
           ${state.sessions.length ? `
             <div style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Previous Sessions</div>
             ${state.sessions.map(s => `<button class="dt-session-btn" data-sid="${s.id}">
-              <div class="title">${s.title}</div>
+              <div class="title">${escHtml(s.title)}</div>
               <div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString('en-IN')}</div>
             </button>`).join('')}
           ` : '<div style="color:#94a3b8;font-size:13px">Run the scraper to start a session</div>'}
@@ -537,7 +554,7 @@
             `<option value="${s}"${s === curDipi ? ' selected' : ''}>${s}</option>`
           ).join('');
           dipiBlock = `<div class="dt-dipi-status" data-dipi="${a.id}">
-            <span class="dt-dipi-label">Dipi: <b>${a.dipiStatus || '?'}</b></span>
+            <span class="dt-dipi-label">Dipi: <b>${escHtml(a.dipiStatus || '?')}</b></span>
             <select class="dt-dipi-sel" data-dipi-sel="${a.id}">${opts}</select>
             <input class="dt-dipi-custom" data-dipi-custom="${a.id}" type="text" placeholder="Custom reason" style="display:none">
             <button class="dt-dipi-update" data-dipi-update="${a.id}">Update</button>
@@ -552,7 +569,7 @@
           <div class="dt-phone-btns">${phoneBtns.join('')}</div>
           ${dipiBlock}
           <div class="dt-status-grid">${statusBtns}</div>
-          <textarea class="dt-notes" placeholder="Add a note..." data-note="${a.id}">${a.notes || ''}</textarea>
+          <textarea class="dt-notes" placeholder="Add a note..." data-note="${a.id}">${escHtml(a.notes || '')}</textarea>
           ${a.status !== 'pending' ? `<button class="dt-reset-btn" data-mark="${a.id}|pending">↩ Reset to Pending</button>` : ''}
         </div>`;
       }
@@ -560,8 +577,8 @@
         <div class="dt-card-main" data-toggle="${a.id}">
           <div class="dt-card-icon" style="background:${st.bg}">${st.icon}</div>
           <div class="dt-card-info">
-            <div class="dt-card-name">${idx+1}. ${a.name}</div>
-            <div class="dt-card-meta">${a.group?a.group+' · ':''}${a.dipiStatus?a.dipiStatus+' · ':''}${a.city?a.city+' · ':''}${a.attempts>0?a.attempts+' attempt'+(a.attempts>1?'s':'')+' · '+timeAgo(a.lastAttempt):'No attempts yet'}</div>
+            <div class="dt-card-name">${idx+1}. ${escHtml(a.name)}</div>
+            <div class="dt-card-meta">${a.group?escHtml(a.group)+' · ':''}${a.dipiStatus?escHtml(a.dipiStatus)+' · ':''}${a.city?escHtml(a.city)+' · ':''}${a.attempts>0?a.attempts+' attempt'+(a.attempts>1?'s':'')+' · '+timeAgo(a.lastAttempt):'No attempts yet'}</div>
           </div>
           <div class="dt-card-badge" style="color:${st.color};background:${st.bg}">${st.label}</div>
         </div>${exp}</div>`;
@@ -571,7 +588,7 @@
       <div class="dt-header">
         <div class="dt-header-top">
           <div style="min-width:0;flex:1">
-            <h1>🧘 ${courseDates || courseTitle}</h1>
+            <h1>🧘 ${escHtml(courseDates || courseTitle)}</h1>
             <div class="sub">${A.length} applicants · ${pending} remaining${courseType?' · '+courseType:''}</div>
           </div>
           <div class="dt-header-btns">
@@ -588,10 +605,10 @@
         </div>` : ''}
         ${Object.keys(groupStats).length ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join('')}</div>` : ''}
         <div class="dt-stats">${statPills.join('')}</div>
-        <div class="dt-search"><input type="text" placeholder="🔍 Search by name..." value="${search}" id="dt-search-box"></div>
+        <div class="dt-search"><input type="text" placeholder="🔍 Search by name..." value="${escHtml(search)}" id="dt-search-box"></div>
       </div>
       <div class="dt-list">${cards.length ? cards : '<div class="dt-empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
-      ${toast ? `<div class="dt-toast">${toast}</div>` : ''}`;
+      ${toast ? `<div class="dt-toast">${escHtml(toast)}</div>` : ''}`;
 
     // Event bindings
     ov.querySelector('#dt-export-btn')?.addEventListener('click', () => setState({ showExport: !state.showExport }));
@@ -685,6 +702,11 @@
         }
       });
     });
+
+    if (searchHadFocus) {
+      const sb = ov.querySelector('#dt-search-box');
+      if (sb) { sb.focus(); try { sb.setSelectionRange(searchCaret, searchCaret); } catch (e) {} }
+    }
   }
 
   function closeTracker() {

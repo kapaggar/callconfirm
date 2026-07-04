@@ -247,8 +247,14 @@ function fmtPhone(num) {
   if (num === "0" || num.toLowerCase() === "na") return "";
   num = num.replace(/[^0-9+]/g, "");
   if (num.startsWith("+")) return num;
-  if (num.length < 10) num = "0".repeat(10 - num.length) + num;
-  return "+91" + num;
+  if (num.length === 10) return "+91" + num;
+  if (num.length === 12 && num.startsWith("91")) return "+" + num;
+  return num; // too short / unusual — keep as-is rather than invent digits
+}
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function timeAgo(iso) {
   if (!iso) return "";
@@ -269,7 +275,7 @@ function parseExcel(ab, fileName) {
   const title = rows[0]?.[0] || fileName.replace(/\.xlsx?$/i, "");
   const hdr = (rows[1] || []).map(h => String(h || "").toLowerCase().trim());
   const ci = (patterns) => hdr.findIndex(h => patterns.some(p => h.includes(p)));
-  const nameI = ci(["name"]), mobI = ci(["phonemobile","mobile"]), homeI = ci(["phonehome","phonehome"]);
+  const nameI = ci(["name"]), mobI = ci(["phonemobile","mobile"]), homeI = ci(["phonehome","home"]);
   const genderI = ci(["gender"]), ageI = ci(["age"]), cityI = ci(["city"]);
 
   const apps = [];
@@ -360,12 +366,14 @@ function updateApp(id, patch) {
 }
 function markStatus(id, status) {
   const a = state.applicants.find(x => x.id === id);
+  if (!a || !STATUSES[status]) return;
   const inc = ["no_answer","left_message"].includes(status);
   updateApp(id, { status, attempts: inc ? (a.attempts||0)+1 : a.attempts, lastAttempt: new Date().toISOString() });
   showToast(a.name.split(" ")[0] + " → " + STATUSES[status].label);
 }
 function logAttempt(id) {
   const a = state.applicants.find(x => x.id === id);
+  if (!a) return;
   updateApp(id, { attempts: (a.attempts||0)+1, lastAttempt: new Date().toISOString() });
 }
 
@@ -407,18 +415,19 @@ function exportPDF() {
   A.forEach(a => { stats[a.status] = (stats[a.status]||0)+1; });
   const rows = A.map((a,i) => `<tr style="background:${i%2===0?"#fff":"#f8f9fa"}">
     <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${i+1}</td>
-    <td style="padding:6px 8px;border:1px solid #ccc;font-weight:500">${a.name}</td>
+    <td style="padding:6px 8px;border:1px solid #ccc;font-weight:500">${escHtml(a.name)}</td>
     <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.mobile}</td>
     <td style="padding:6px 8px;border:1px solid #ccc;font-family:monospace;font-size:11px">${a.home}</td>
     <td style="text-align:center;padding:6px 4px;border:1px solid #ccc;font-weight:600;color:${STATUSES[a.status]?.color||"#666"}">${STATUSES[a.status]?.label||a.status}</td>
     <td style="text-align:center;padding:6px 4px;border:1px solid #ccc">${a.attempts}</td>
-    <td style="padding:6px 8px;border:1px solid #ccc;font-size:10px;color:#666">${a.notes||""}</td></tr>`).join("");
+    <td style="padding:6px 8px;border:1px solid #ccc;font-size:10px;color:#666">${escHtml(a.notes||"")}</td></tr>`).join("");
   const w = window.open("","_blank");
-  w.document.write(`<!DOCTYPE html><html><head><title>${state.courseTitle}</title><style>
+  if (!w) { showToast("Popup blocked — allow popups to print"); setState({ showExport: false }); return; }
+  w.document.write(`<!DOCTYPE html><html><head><title>${escHtml(state.courseTitle)}</title><style>
     @page{margin:10mm}body{font-family:-apple-system,sans-serif;font-size:12px;margin:0;padding:10px}
     h1{font-size:16px;text-align:center;margin:0 0 4px}.sub{text-align:center;color:#666;margin-bottom:10px;font-size:11px}
     table{width:100%;border-collapse:collapse}th{background:#2c3e50;color:#fff;padding:7px 4px;border:1px solid #2c3e50;font-size:11px}
-  </style></head><body><h1>${state.courseTitle}</h1>
+  </style></head><body><h1>${escHtml(state.courseTitle)}</h1>
   <div class="sub">✅ ${stats.confirmed||0} Confirmed | ❌ ${stats.cancelled||0} Cancelled | ⏳ ${stats.pending||0} Pending | Total: ${A.length}</div>
   <table><tr><th>#</th><th>Name</th><th>Mobile</th><th>Home</th><th>Status</th><th>Att.</th><th>Notes</th></tr>${rows}</table>
   <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
@@ -507,6 +516,9 @@ function whatsappBulk() {
 function render() {
   const el = document.getElementById("app");
   const { sessions, activeId, applicants: A, courseTitle, filter, search, expandedId, showExport, toast } = state;
+  // innerHTML replacement destroys the focused search box; remember it so typing isn't interrupted
+  const searchHadFocus = document.activeElement && document.activeElement.id === "searchBox";
+  const searchCaret = searchHadFocus ? document.activeElement.selectionStart : 0;
 
   // Upload screen
   if (!activeId || A.length === 0) {
@@ -521,7 +533,7 @@ function render() {
         <input type="file" accept=".xlsx,.xls" id="fileInput" style="display:none">
       </label>
       ${sessions.length ? `<div class="prev-sessions"><h3>Previous Sessions</h3>${sessions.map(s =>
-        `<button class="session-btn" data-sid="${s.id}"><div class="title">${s.title}</div><div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString("en-IN")}</div></button>`
+        `<button class="session-btn" data-sid="${s.id}"><div class="title">${escHtml(s.title)}</div><div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString("en-IN")}</div></button>`
       ).join("")}</div>` : ""}
       <div style="margin-top:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Import from DIPI</div>
@@ -601,7 +613,7 @@ function render() {
       exp = `<div class="card-expanded">
         <div class="phone-btns">${phoneBtns.join("")}</div>
         <div class="status-grid">${statusBtns}</div>
-        <textarea class="notes" placeholder="Add a note..." data-note="${a.id}">${a.notes||""}</textarea>
+        <textarea class="notes" placeholder="Add a note..." data-note="${a.id}">${escHtml(a.notes||"")}</textarea>
         ${a.status !== "pending" ? `<button class="reset-btn" data-mark="${a.id}|pending">↩ Reset to Pending</button>` : ""}
       </div>`;
     }
@@ -609,8 +621,8 @@ function render() {
       <div class="card-main" data-toggle="${a.id}">
         <div class="card-icon" style="background:${st.bg}">${st.icon}</div>
         <div class="card-info">
-          <div class="card-name">${idx+1}. ${a.name}</div>
-          <div class="card-meta">${a.group ? a.group + ' · ' : ''}${a.city?a.city+" · ":""}${a.attempts>0?a.attempts+" attempt"+(a.attempts>1?"s":"")+" · "+timeAgo(a.lastAttempt):"No attempts yet"}</div>
+          <div class="card-name">${idx+1}. ${escHtml(a.name)}</div>
+          <div class="card-meta">${a.group ? escHtml(a.group) + ' · ' : ''}${a.city?escHtml(a.city)+" · ":""}${a.attempts>0?a.attempts+" attempt"+(a.attempts>1?"s":"")+" · "+timeAgo(a.lastAttempt):"No attempts yet"}</div>
         </div>
         <div class="card-badge" style="color:${st.color};background:${st.bg}">${st.label}</div>
       </div>${exp}</div>`;
@@ -620,7 +632,7 @@ function render() {
     <div class="header">
       <div class="header-top">
         <div>
-          <h1>🧘 ${courseDates || courseTitle}</h1>
+          <h1>🧘 ${escHtml(courseDates || courseTitle)}</h1>
           <div class="sub">${A.length} applicants · ${pending} remaining${courseType ? ' · ' + courseType : ''}</div>
         </div>
         <div class="header-btns">
@@ -637,10 +649,10 @@ function render() {
       </div>` : ""}
       ${Object.keys(groupStats).length > 0 ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join("")}</div>` : ""}
       <div class="stats">${statPills.join("")}</div>
-      <div class="search"><input type="text" placeholder="🔍  Search by name..." value="${search}" id="searchBox"></div>
+      <div class="search"><input type="text" placeholder="🔍  Search by name..." value="${escHtml(search)}" id="searchBox"></div>
     </div>
     <div class="list">${cards.length ? cards : '<div class="empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
-    ${toast ? `<div class="toast">${toast}</div>` : ""}`;
+    ${toast ? `<div class="toast">${escHtml(toast)}</div>` : ""}`;
 
   // ── Bind events ──
   document.getElementById("exportBtn")?.addEventListener("click", () => setState({ showExport: !state.showExport }));
@@ -680,6 +692,11 @@ function render() {
     });
     el.addEventListener("click", e => e.stopPropagation());
   });
+
+  if (searchHadFocus) {
+    const sb = document.getElementById("searchBox");
+    if (sb) { sb.focus(); try { sb.setSelectionRange(searchCaret, searchCaret); } catch (e) {} }
+  }
 }
 
 // ── Boot ──
