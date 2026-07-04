@@ -58,7 +58,13 @@
     const sevak = /\(Sevak\)/i.test(String(s)) ? ' (Sevak)' : '';
     return base.replace(/\s+/g, ' ').trim() + sevak;
   };
+  const PAN_SHAPE = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
+  const looksLikePan = (v) => PAN_SHAPE.test(String(v == null ? '' : v).replace(/\s+/g, ''));
   const resolveId = (r) => {
+    // dipi's edit form has a single Identifier (document_id) field + Document Type
+    // dropdown; a PAN sometimes lands in the aadhar column when type = Pancard.
+    // Classify by content so a PAN value is never audited under Aadhar rules.
+    if (r.aadhar && looksLikePan(r.aadhar)) return { type: 'Pan card', num: r.aadhar };
     if (r.aadhar)   return { type: 'Aadhar',   num: r.aadhar };
     if (r.pancard)  return { type: 'Pan card', num: r.pancard };
     if (r.voterid)  return { type: 'Voter ID', num: r.voterid };
@@ -97,8 +103,8 @@
       Accommodation: r.acc || '',
       'ID Type': id.type,
       'ID No': id.num,
-      'Aadhar Raw': r.aadhar || '',
-      'PAN Raw': r.pancard || '',
+      'Aadhar Raw': looksLikePan(r.aadhar) ? '' : (r.aadhar || ''),
+      'PAN Raw': r.pancard || (looksLikePan(r.aadhar) ? r.aadhar : ''),
       'Voter ID Raw': r.voterid || '',
       'Passport Raw': r.passport || '',
       'Conf No': r.confno || '',
@@ -305,6 +311,7 @@ ${sections.join('\n\n')}`;
       case 'pan_invalid':              return 'PAN invalid format';
       case 'id_type_concatenated':     return 'ID Type concat';
       case 'id_type_unknown':          return 'ID Type unknown';
+      case 'id_type_mismatch':         return `${f.idType} field holds a ${f.looksLike}`;
       case 'age_dob_mismatch':         return `age vs DOB (listed ${f.listedAge}, calc ${f.calcAge})`;
       case 'age_under_min':            return `age ${f.age} under 18`;
       case 'age_over_max':             return `age ${f.age} over 95`;
@@ -316,6 +323,7 @@ ${sections.join('\n\n')}`;
       case 'emergency_partial':        return `emergency partial (name=${f.hasName?'Y':'N'}, phone=${f.hasPhone?'Y':'N'})`;
       case 'shared_mobile':            return `shared mobile rows ${(f.rows||[]).join(',')}`;
       case 'shared_email_unrelated':   return 'shared email, unrelated surnames';
+      case 'name_title_prefix':        return `title "${f.prefix}" in name`;
       case 'cross_course_duplicate': {
         const where = (f.alsoIn || []).map(x => x.courseId).join(', ');
         const bys = new Set();
@@ -423,6 +431,7 @@ ${sections.join('\n\n')}`;
     pan_invalid:          'f-id-alt',
     id_type_concatenated: 'f-id-alt',
     id_type_unknown:      'f-id-alt',
+    id_type_mismatch:     'f-id-alt',
     aadhar_masked:        'f-id-alt',
     aadhar_length:        'f-id-alt',
     // Phone — orange
@@ -445,6 +454,7 @@ ${sections.join('\n\n')}`;
     // Soft — gray
     shared_mobile:           'f-soft',
     shared_email_unrelated:  'f-soft',
+    name_title_prefix:       'f-soft',
     // Status / misc
     status_unknown:           'f-status',
     conf_gender_mismatch:     'f-status',
@@ -484,6 +494,8 @@ ${sections.join('\n\n')}`;
         return `ID Type field has multiple values concatenated: "${f.value}"`;
       case 'id_type_unknown':
         return `ID Type is unrecognized: "${f.value}"`;
+      case 'id_type_mismatch':
+        return `ID Type is ${f.idType} but the value looks like a ${f.looksLike}: ${f.value} — fix the Document Type on the form`;
       case 'age_dob_mismatch':
         return `Age says ${f.listedAge} but DOB calculates to ${f.calcAge} (DOB ${f.dob})`;
       case 'age_under_min':
@@ -513,6 +525,8 @@ ${sections.join('\n\n')}`;
         return `${nameList(f.names)} share mobile number ${f.phone} (likely family)`;
       case 'shared_email_unrelated':
         return `${nameList(f.names)} share email ${f.email} but have unrelated surnames`;
+      case 'name_title_prefix':
+        return `Name starts with title "${f.prefix}" — remove it from "${f.value}"`;
       case 'cross_course_duplicate': {
         // alsoIn: [{courseId, name, status, confNo, matchBy:[...]}, ...]
         const parts = (f.alsoIn||[]).map(x => {

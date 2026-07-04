@@ -51,6 +51,53 @@
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? s : null;
   };
 
+  // Honorific / title prefixes that shouldn't be part of Name.
+  // Multi-word entries must come before their single-word heads (sorted longest-first below).
+  const NAME_PREFIXES = [
+    'Mr', 'Mrs', 'Ms', 'Miss', 'Mx',
+    'Shri', 'Sri', 'Shree', 'Smt', 'Kumari', 'Kum', 'Master', 'Baby',
+    'Dr', 'Doctor', 'Prof', 'Professor', 'Asst Prof', 'Associate Prof',
+    'Principal', 'Dean', 'Er', 'Engineer', 'Adv', 'Advocate',
+    'CA', 'CS', 'CMA', 'CPA', 'Architect', 'Ar', 'Counsel',
+    'IAS', 'IPS', 'IFS', 'IRS', 'PCS',
+    'Retd', 'Retired', 'Ex',
+    'Lt', 'Capt', 'Captain', 'Major', 'Maj', 'Col', 'Colonel',
+    'Brig', 'Brigadier', 'Gen', 'General', 'Subedar', 'Havildar',
+    'Inspector', 'SI', 'ASI', 'DSP', 'SP', 'ACP', 'DCP', 'DIG', 'IG',
+    'Lt Col', 'Maj Gen', 'Brig Gen', 'Retd Col', 'Col Retd',
+    'Swami', 'Sadhu', 'Sadhvi', 'Acharya', 'Venerable',
+    'Rev', 'Reverend', 'Fr', 'Father', 'Pastor',
+    'Maulana', 'Mufti', 'Hafiz', 'Haji', 'Hajji',
+    'Pandit', 'Pt', 'Pujya', 'Guruji', 'Muni',
+    'Kunwar', 'Thakur', 'Sir', 'Dame', 'Lord', 'Lady',
+  ];
+  const PREFIX_LIST = NAME_PREFIXES
+    .map(p => p.toLowerCase())
+    .sort((a, b) => b.split(' ').length - a.split(' ').length);
+
+  // Returns the matched title prefix (as written in the name) or null.
+  // Only flags when the title is followed by an actual name, so standalone
+  // given names like "Baby" or "Kumari" alone don't trip it.
+  const namePrefix = (name) => {
+    if (name == null) return null;
+    const norm = String(name)
+      .replace(/\(sevak\)/gi, '')
+      .replace(/\./g, '. ')       // "Mr.Ramesh" -> "Mr. Ramesh"
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!norm) return null;
+    const tokens = norm.split(' ');
+    const bare = tokens.map(t => t.replace(/\.+$/, '').toLowerCase());
+    for (const p of PREFIX_LIST) {
+      const pt = p.split(' ');
+      if (tokens.length <= pt.length) continue; // must be followed by a name
+      if (bare.slice(0, pt.length).join(' ') === p) {
+        return tokens.slice(0, pt.length).join(' ');
+      }
+    }
+    return null;
+  };
+
   const parseDate = (x) => {
     if (!x) return null;
     const d = new Date(x);
@@ -85,9 +132,11 @@
     const data = rows.map((r, i) => {
       // Aadhar: prefer the primary ID if ID Type=Aadhar, else fall back to 'Aadhar Raw'
       const aadhar = normAadhar(r['ID No'], r['ID Type']) || normAadharRaw(r['Aadhar Raw']);
-      // PAN: prefer 'PAN Raw', else use primary ID if ID Type=Pan card
+      // PAN: prefer 'PAN Raw', else primary ID if ID Type=Pan card,
+      // else primary ID when its value is PAN-shaped (mislabeled Identifier)
       let panSrc = r['PAN Raw'];
       if (!panSrc && /^pan/i.test(String(r['ID Type'] || ''))) panSrc = r['ID No'];
+      if (!panSrc && normPan(r['ID No'])) panSrc = r['ID No'];
       const pan = normPan(panSrc);
       return {
         _i: i,
@@ -144,14 +193,18 @@
       }
     });
 
-    // 4. Aadhar wrong length / masked
+    // 4. Aadhar wrong length / masked / actually a PAN
     active.forEach(d => {
       const type = String(d.raw['ID Type'] || '');
       if (!/^aadhar/i.test(type)) return;
       const raw = String(d.raw['ID No'] || '').trim();
       if (!raw) return; // id_missing handles this case
       if (/X{4,}/i.test(raw)) push(H, 'aadhar_masked', d, { value: raw });
-      else {
+      else if (PAN_RE_INTERNAL.test(raw.replace(/\s+/g, '').toUpperCase())) {
+        // dipi's single Identifier field: a PAN mislabeled as Aadhar.
+        // Don't run Aadhar length rules on it — flag the type mismatch instead.
+        push(H, 'id_type_mismatch', d, { value: raw, idType: 'Aadhar', looksLike: 'PAN' });
+      } else {
         const digits = raw.replace(/\D/g, '');
         if (digits.length !== 12) push(H, 'aadhar_length', d, { value: raw, len: digits.length });
       }
@@ -193,14 +246,20 @@
       const idNo   = String(d.raw['ID No'] || '').trim();
       const panRaw = String(d.raw['PAN Raw'] || '').trim();
 
-      // PAN can appear in two places:
+      // PAN can appear in three places:
       //   1. The dedicated PAN column ('PAN Raw' from the dipi pancard field)
       //   2. As the primary ID with ID Type = "Pan card"
+      //   3. Mislabeled under another ID Type (dipi single Identifier field) —
+      //      accept it if the value is PAN-shaped, so pan_missing doesn't fire
       let pan = panRaw;
       if (!pan && idType === 'pan card') pan = idNo;
+      if (!pan && PAN_RE.test(idNo.replace(/\s+/g, ''))) pan = idNo;
 
       if (!pan) {
         push(H, 'pan_missing', d, {});
+      } else if (/^\d{12}$/.test(pan.replace(/\s+/g, ''))) {
+        // 12-digit number in the PAN slot — almost certainly an Aadhar
+        push(H, 'id_type_mismatch', d, { value: pan, idType: 'Pan card', looksLike: 'Aadhar' });
       } else if (!PAN_RE.test(pan.replace(/\s+/g, ''))) {
         push(H, 'pan_invalid', d, { value: pan });
       }
@@ -342,6 +401,12 @@
       }
     }
 
+    // 17. Honorific/title prefix in Name (data hygiene: pollutes letters, Conf lists, dedup)
+    active.forEach(d => {
+      const p = namePrefix(d.raw.Name);
+      if (p) push(SF, 'name_title_prefix', d, { prefix: p, value: d.raw.Name });
+    });
+
     // ===== CROSS-COURSE =====
     if (opts.allCourses && Array.isArray(opts.allCourses)) {
       const C = findings.crossCourse;
@@ -355,6 +420,7 @@
           const aadhar = normAadhar(r['ID No'], r['ID Type']) || normAadharRaw(r['Aadhar Raw']);
           let panSrc = r['PAN Raw'];
           if (!panSrc && /^pan/i.test(String(r['ID Type'] || ''))) panSrc = r['ID No'];
+          if (!panSrc && normPan(r['ID No'])) panSrc = r['ID No'];
           const pan = normPan(panSrc);
           otherIndex.push({
             courseId: c.courseId,
@@ -417,5 +483,5 @@
     return findings;
   }
 
-  root.CourseAudit = { run, _internal: { normPhone, normName, normAadhar, ageOn, isActive } };
+  root.CourseAudit = { run, _internal: { normPhone, normName, normAadhar, ageOn, isActive, namePrefix } };
 })(typeof window !== 'undefined' ? window : globalThis);
