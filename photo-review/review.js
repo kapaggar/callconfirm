@@ -128,6 +128,146 @@
     return out;
   }
 
+  // ── dipi write-back (phase 2) ──
+  // dipi has no photo-only endpoint. Saving a photo means resubmitting the WHOLE
+  // application form to POST /app/{aid}/edit (multipart, 302 on success). So we:
+  //   1. GET the live edit form, preserve every current field + fresh CSRF tokens
+  //   2. swap only files[upload_photo] with the corrected JPEG
+  //   3. POST the reconstructed form
+  //   4. re-GET and diff — confirm no other field (name, Aadhar, health, etc.) drifted
+  // A dropped/altered field would wipe authoritative VRI data, so every step verifies.
+  const APPLICANT_FORM_ID = 'dh_ma_applicant_form';
+  const VERIFY_IGNORE = new Set(['form_build_id', 'form_token', 'files[upload_photo]', 'op']);
+
+  function editUrlFor(aid) { return '/app/' + encodeURIComponent(aid) + '/edit'; }
+
+  // Pure: turn a plain control descriptor into its submitted [name,value] entries,
+  // following standard HTML form-submission semantics.
+  function controlToEntries(c) {
+    if (!c.name || c.disabled) return [];
+    const type = (c.type || '').toLowerCase();
+    if (type === 'file' || type === 'submit' || type === 'button' || type === 'image' || type === 'reset') return [];
+    if (type === 'checkbox' || type === 'radio') return c.checked ? [[c.name, c.value != null ? c.value : 'on']] : [];
+    if (c.tag === 'select') return (c.options || []).filter(o => o.selected).map(o => [c.name, o.value]);
+    return [[c.name, c.value != null ? c.value : '']];
+  }
+
+  // Read a DOM control into the plain descriptor controlToEntries expects.
+  function describeControl(el) {
+    return {
+      name: el.name, tag: el.tagName.toLowerCase(), type: el.type, disabled: el.disabled,
+      checked: el.checked, value: el.value,
+      options: el.tagName.toLowerCase() === 'select'
+        ? Array.from(el.options).map(o => ({ value: o.value, selected: o.selected })) : null,
+    };
+  }
+
+  // Parse the edit-form HTML into { form, entries }. Picks the form carrying the
+  // applicant form_id, so unrelated page forms (search, logout) are never touched.
+  function parseEditForm(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const forms = Array.from(doc.querySelectorAll('form'));
+    const form = forms.find(f => {
+      const fid = f.querySelector('input[name="form_id"]');
+      return fid && fid.value === APPLICANT_FORM_ID;
+    });
+    if (!form) return { form: null, entries: [] };
+    const entries = [];
+    form.querySelectorAll('input, select, textarea').forEach(el => {
+      controlToEntries(describeControl(el)).forEach(e => entries.push(e));
+    });
+    return { form, entries };
+  }
+
+  // Pure: names whose trimmed value differs between two entry lists (ignoring set).
+  function diffEntries(before, after, ignore) {
+    const norm = (list) => {
+      const m = {};
+      list.forEach(([k, v]) => { if (!ignore.has(k)) m[k] = (m[k] || []).concat(String(v == null ? '' : v).trim()); });
+      return m;
+    };
+    const a = norm(before), b = norm(after);
+    const drift = [];
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      const av = (a[k] || []).join(''), bv = (b[k] || []).join('');
+      if (av !== bv) drift.push(k);
+    }
+    return drift;
+  }
+
+  // Pure: mask sensitive values for the dry-run preview (data is still SENT in full;
+  // this only controls what's shown on screen).
+  function maskValue(name, val) {
+    const s = String(val == null ? '' : val);
+    if (/form_build_id|form_token/.test(name)) return '<' + s.length + ' chars>';
+    if (/document_id|phone|_num|mobile/i.test(name) && s.replace(/\D/g, '').length >= 5) {
+      const d = s.replace(/\s/g, '');
+      return d.length <= 4 ? d : 'XXXX…' + d.slice(-4);
+    }
+    if (/email/i.test(name) && s.includes('@')) { const [u, dom] = s.split('@'); return (u[0] || '') + '…@' + dom; }
+    return s.length > 60 ? s.slice(0, 60) + '…' : s;
+  }
+
+  function buildUploadBody(entries, blob, filename) {
+    const fd = new FormData();
+    entries.forEach(([k, v]) => { if (k !== 'files[upload_photo]') fd.append(k, v); });
+    fd.set('op', 'Update');
+    fd.set('files[upload_photo]', blob, filename);
+    return fd;
+  }
+
+  async function correctedBlob(item) {
+    if (!item.bitmap) await loadBitmap(item);
+    if (!item.bitmap) throw new Error('photo not loaded');
+    const c = correctedCanvas(item);
+    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('JPEG export failed');
+    return blob;
+  }
+  function uploadFilename(item) {
+    const safe = (item.name || '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return (item.aid || item.photoId) + (safe ? '_' + safe : '') + '.jpg';
+  }
+
+  // Step 1: fetch the live form, snapshot every field, render the corrected JPEG.
+  // Returns { ok, entries, blob, filename } or an error result. Never throws.
+  async function prepareUpload(item) {
+    if (!item.aid) return { ok: false, stage: 'precheck', error: 'no application id (aid) for this row' };
+    if (item.rot === 0 && !item.crop) return { ok: false, stage: 'precheck', error: 'no correction to upload' };
+    try {
+      const getResp = await fetch(editUrlFor(item.aid), { credentials: 'same-origin' });
+      if (!getResp.ok) return { ok: false, stage: 'fetch-form', error: 'HTTP ' + getResp.status };
+      const before = parseEditForm(await getResp.text());
+      if (!before.form) return { ok: false, stage: 'fetch-form', error: 'applicant form not found (session expired?)' };
+      const blob = await correctedBlob(item);
+      return { ok: true, entries: before.entries, blob, filename: uploadFilename(item) };
+    } catch (e) {
+      return { ok: false, stage: 'exception', error: e.message };
+    }
+  }
+
+  // Step 2: POST the reconstructed form (photo swapped), then re-GET and diff to
+  // prove no other field drifted. Returns a result object; never throws.
+  async function commitUpload(item, prepared) {
+    try {
+      const body = buildUploadBody(prepared.entries, prepared.blob, prepared.filename);
+      const postResp = await fetch(editUrlFor(item.aid), { method: 'POST', credentials: 'same-origin', body });
+      const landedOnEdit = /\/app\/\d+\/edit/.test(postResp.url);
+      if (!postResp.ok || landedOnEdit) {
+        // Drupal re-renders the form (200, still on /edit) on validation failure — NOT saved.
+        return { ok: false, stage: 'submit', error: landedOnEdit ? 'form rejected (validation error) — nothing saved' : 'HTTP ' + postResp.status };
+      }
+      const verifyResp = await fetch(editUrlFor(item.aid), { credentials: 'same-origin' });
+      if (!verifyResp.ok) return { ok: true, stage: 'verify', warn: 'saved, but could not re-fetch to verify (HTTP ' + verifyResp.status + ')' };
+      const after = parseEditForm(await verifyResp.text());
+      const drift = diffEntries(prepared.entries, after.entries, VERIFY_IGNORE);
+      if (drift.length) return { ok: true, stage: 'verify', drift, warn: 'saved, but these fields changed: ' + drift.join(', ') };
+      return { ok: true, stage: 'done' };
+    } catch (e) {
+      return { ok: false, stage: 'exception', error: e.message };
+    }
+  }
+
   // ── Face detection auto-suggest (Chrome only; on-device) ──
   const hasFaceDetector = ('FaceDetector' in window);
   async function suggestFor(item) {
@@ -177,6 +317,87 @@
     return true;
   }
 
+  // ── Write-back UI: dry-run preview + single / batch orchestration ──
+  function correctionSummary(item) {
+    const bits = [];
+    if (item.rot) bits.push('rotated ' + item.rot + '°');
+    if (item.crop) bits.push('cropped');
+    return bits.join(' + ') || 'no change';
+  }
+
+  // Modal listing every field that will be resubmitted (sensitive values masked),
+  // with the photo swap highlighted. Resolves true to commit, false to cancel.
+  function dryRunConfirm(item, prepared) {
+    return new Promise((resolve) => {
+      const ov = document.getElementById(OVERLAY_ID);
+      const modal = document.createElement('div');
+      modal.className = 'pr-modal';
+      const rows = prepared.entries
+        .filter(([k]) => k !== 'files[upload_photo]')
+        .map(([k, v]) => `<tr><td>${escHtml(k)}</td><td>${escHtml(maskValue(k, v))}</td></tr>`).join('');
+      const kb = Math.round(prepared.blob.size / 1024);
+      modal.innerHTML = `
+        <div class="pr-modal-card">
+          <div class="pr-modal-title">Dry run — resubmit ${escHtml(item.name || 'applicant')}'s full application?</div>
+          <div class="pr-modal-warn">This posts the entire form back to dipi. Only the photo changes (${escHtml(correctionSummary(item))}, ${kb} KB). Every field below is preserved exactly as shown; after saving it is re-checked and any drift is flagged.</div>
+          <div class="pr-modal-photo">📷 <b>files[upload_photo]</b> → new corrected JPEG (${prepared.filename})</div>
+          <div class="pr-modal-tablewrap"><table class="pr-modal-table"><tr><th>field</th><th>value (sensitive fields masked)</th></tr>${rows}</table></div>
+          <div class="pr-modal-actions">
+            <button class="pr-btn pr-btn-gray" data-x="cancel">Cancel</button>
+            <button class="pr-btn pr-btn-blue" data-x="commit">Commit upload to dipi</button>
+          </div>
+        </div>`;
+      ov.appendChild(modal);
+      const done = (val) => { modal.remove(); resolve(val); };
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) return done(false);
+        const x = e.target.closest('[data-x]');
+        if (!x) return;
+        done(x.dataset.x === 'commit');
+      });
+    });
+  }
+
+  function reportResult(item, res) {
+    if (res.ok && res.stage === 'done') { item.uploaded = true; toast('✓ Uploaded ' + item.name.split(' ')[0] + ' — all other fields preserved'); }
+    else if (res.ok && res.warn) { item.uploaded = true; alert('⚠ ' + item.name + ': ' + res.warn + '\n\nOpen their dipi edit page to double-check.'); }
+    else { alert('✗ Upload failed for ' + item.name + ' (' + res.stage + '): ' + (res.error || 'unknown') + '\n\nNothing was saved.'); }
+  }
+
+  async function uploadSingle(item) {
+    toast('Fetching ' + (item.name.split(' ')[0] || 'record') + '’s current form…');
+    const prepared = await prepareUpload(item);
+    if (!prepared.ok) { reportResult(item, prepared); return; }
+    const go = await dryRunConfirm(item, prepared);
+    if (!go) { toast('Cancelled — nothing sent'); return; }
+    toast('Uploading…');
+    const res = await commitUpload(item, prepared);
+    reportResult(item, res);
+    updateCard(item);
+  }
+
+  async function uploadAllFixed() {
+    const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop) && it.aid && !it.uploaded);
+    if (!fixed.length) { toast('No fixed, un-uploaded photos with an AID'); return; }
+    if (!confirm('Upload ' + fixed.length + ' corrected photo(s) to dipi?\n\nEach does a full-form-preserving round-trip with verify. The batch STOPS at the first failure or field drift so you can inspect it.\n\nProceed?')) return;
+    let okN = 0;
+    for (const item of fixed) {
+      toast('Uploading ' + (okN + 1) + '/' + fixed.length + ' — ' + item.name.split(' ')[0] + '…');
+      const prepared = await prepareUpload(item);
+      if (!prepared.ok) { alert('Batch stopped at ' + item.name + ': ' + prepared.error + '\n\n' + okN + ' uploaded so far.'); return; }
+      const res = await commitUpload(item, prepared);
+      if (!res.ok || res.drift) {
+        updateCard(item);
+        alert('Batch stopped at ' + item.name + ':\n' + (res.error || res.warn) + '\n\n' + okN + ' uploaded successfully before this. Inspect this record on dipi before continuing.');
+        return;
+      }
+      item.uploaded = true; okN++;
+      updateCard(item);
+      await new Promise(r => setTimeout(r, 400));
+    }
+    toast('✓ Uploaded ' + okN + ' photo(s), all fields preserved');
+  }
+
   // ── Overlay ──
   function ensureOverlay() {
     let ov = document.getElementById(OVERLAY_ID);
@@ -218,9 +439,24 @@
         font-size:13px; padding:6px 0; cursor:pointer; text-align:center; }
       #${OVERLAY_ID} .pr-c:hover { background:#eef2f7; }
       #${OVERLAY_ID} .pr-c.on { background:#dcfce7; border-color:#86efac; }
+      #${OVERLAY_ID} .pr-c-dipi { flex-basis:100%; font-size:12px; font-weight:600; color:#0f766e; }
+      #${OVERLAY_ID} .pr-c-dipi:disabled { color:#cbd5e1; background:#f8fafc; cursor:not-allowed; }
+      #${OVERLAY_ID} .pr-c-dipi.on { background:#ccfbf1; border-color:#5eead4; color:#0f766e; }
+      #${OVERLAY_ID} .pr-btn-teal { background:#0d9488; color:#fff; }
       #${OVERLAY_ID} .pr-empty { text-align:center; color:#94a3b8; padding:48px 16px; grid-column:1/-1; }
       #${OVERLAY_ID} .pr-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1e293b; color:#fff;
         padding:10px 20px; border-radius:10px; font-size:13px; z-index:2147483647; white-space:nowrap; }
+      #${OVERLAY_ID} .pr-modal { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2147483647; display:flex; align-items:center; justify-content:center; padding:16px; }
+      #${OVERLAY_ID} .pr-modal-card { background:#fff; border-radius:12px; max-width:560px; width:100%; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 8px 40px rgba(0,0,0,.4); }
+      #${OVERLAY_ID} .pr-modal-title { font-size:15px; font-weight:700; padding:16px 18px 6px; }
+      #${OVERLAY_ID} .pr-modal-warn { font-size:12px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; margin:0 18px; padding:8px 10px; }
+      #${OVERLAY_ID} .pr-modal-photo { font-size:12px; color:#0f766e; padding:8px 18px 4px; }
+      #${OVERLAY_ID} .pr-modal-tablewrap { overflow:auto; margin:4px 18px; border:1px solid #e2e8f0; border-radius:8px; }
+      #${OVERLAY_ID} .pr-modal-table { width:100%; border-collapse:collapse; font-size:11px; }
+      #${OVERLAY_ID} .pr-modal-table th { text-align:left; background:#f1f5f9; padding:5px 8px; position:sticky; top:0; }
+      #${OVERLAY_ID} .pr-modal-table td { padding:4px 8px; border-top:1px solid #f1f5f9; vertical-align:top; word-break:break-word; }
+      #${OVERLAY_ID} .pr-modal-table td:first-child { color:#64748b; white-space:nowrap; font-family:ui-monospace,monospace; }
+      #${OVERLAY_ID} .pr-modal-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 16px; }
     `;
     document.head.appendChild(style);
     ov = document.createElement('div');
@@ -278,6 +514,17 @@
     } else if (badge) badge.remove();
     el.querySelector('[data-act="done"]').classList.toggle('on', !!item.done);
     el.querySelector('[data-act="crop"]').classList.toggle('on', !!item.crop);
+    const dipiBtn = el.querySelector('[data-act="dipi"]');
+    if (dipiBtn) {
+      const hasCorrection = (item.rot !== 0 || !!item.crop);
+      dipiBtn.disabled = !hasCorrection || !item.aid || !!item.uploaded;
+      dipiBtn.classList.toggle('on', !!item.uploaded);
+      dipiBtn.textContent = item.uploaded ? '✓dipi' : '⬆dipi';
+      dipiBtn.title = !item.aid ? 'No application id — cannot upload'
+        : item.uploaded ? 'Already uploaded this session'
+        : !hasCorrection ? 'Rotate or crop first'
+        : 'Upload corrected photo to dipi (full-form-preserving, with dry-run)';
+    }
     drawCard(item);
   }
 
@@ -396,6 +643,7 @@
         <button class="pr-c" data-act="crop" title="Drag-crop; click again to clear">✂</button>
         <button class="pr-c" data-act="done" title="Mark reviewed (d)">✓</button>
         <button class="pr-c" data-act="dl" title="Download corrected JPEG (s)">⬇</button>
+        <button class="pr-c pr-c-dipi" data-act="dipi" title="Upload corrected photo to dipi">⬆dipi</button>
       </div>`;
     el.addEventListener('click', (e) => {
       selectCard(idx);
@@ -411,6 +659,7 @@
       }
       else if (act === 'done') { item.done = !item.done; saveCorrection(item); updateCard(item); updatePills(); }
       else if (act === 'dl') download(item);
+      else if (act === 'dipi') { if (!btn.disabled) uploadSingle(item); }
     });
     item.el = el;
     return el;
@@ -513,7 +762,7 @@
           name: cleanName(r.name), aid: r.aid || '', confno: r.confno || '',
           status: r.app_status || '',
           rot: prev.rot || 0, crop: prev.crop || null, done: !!prev.done,
-          bitmap: null, suggestion: null, el: null,
+          bitmap: null, suggestion: null, el: null, uploaded: false,
         };
       })
       .filter(Boolean);
@@ -525,10 +774,11 @@
     ov.innerHTML = `
       <div class="pr-header">
         <div class="pr-title">📷 Photo Review
-          <span class="sub">${escHtml(courseKey)} · ${state.items.length} photo(s) · local-only, nothing is uploaded</span>
+          <span class="sub">${escHtml(courseKey)} · ${state.items.length} photo(s) · corrections are local until you upload to dipi</span>
         </div>
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
+        <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
         <button class="pr-btn pr-btn-red" id="pr-close">✕ Close</button>
         <div class="pr-pills">
           <button class="pr-pill" data-f="all"></button>
@@ -566,6 +816,7 @@
         await new Promise(r => setTimeout(r, 350));
       }
     });
+    ov.querySelector('#pr-up-all').addEventListener('click', uploadAllFixed);
     ov.querySelectorAll('.pr-pill').forEach(p => p.addEventListener('click', () => { state.filter = p.dataset.f; updatePills(); }));
     document.addEventListener('keydown', onKeyNav);
     updatePills();
@@ -573,7 +824,10 @@
 
   window.DipiPhotoReview = {
     open, close,
-    _internal: { rotatedDims, clampCrop, expandFaceBox, pruneCorrections, photoIdFromUrl, escHtml },
+    _internal: {
+      rotatedDims, clampCrop, expandFaceBox, pruneCorrections, photoIdFromUrl, escHtml,
+      controlToEntries, diffEntries, maskValue, buildUploadBody, uploadFilename,
+    },
   };
 
   open();
