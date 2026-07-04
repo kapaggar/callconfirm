@@ -120,16 +120,20 @@
     const landmarkWins = withFace.filter(d => d.landmarksOk === true).sort(byArea);
     const anyLandmarkInfo = withFace.some(d => d.landmarksOk === true || d.landmarksOk === false);
 
-    let best, confidence;
+    let best, confidence, landmarkConfirmed = false;
     if (landmarkWins.length) {
       best = landmarkWins[0];
       // one upright orientation = confident; several = only if one dominates on area
       confidence = (landmarkWins.length === 1 ||
         best.area > (landmarkWins[1].area || 0) * dom) ? 'high' : 'medium';
+      landmarkConfirmed = confidence === 'high';
     } else if (!anyLandmarkInfo) {
-      // no landmark data anywhere (platform gap): fall back to area heuristic
-      best = withFace.slice().sort(byArea)[0];
-      confidence = withFace.length === 1 ? 'high' : 'medium';
+      // No landmark data anywhere (Chrome/macOS returns boxes but no eyes/nose/mouth):
+      // fall back to area — the correct orientation usually detects a clearly bigger
+      // face. High confidence when a single rotation dominates the others.
+      const sorted = withFace.slice().sort(byArea);
+      best = sorted[0];
+      confidence = (sorted.length === 1 || best.area > (sorted[1].area || 0) * dom) ? 'high' : 'medium';
     } else {
       // landmarks existed but none confirmed upright → ambiguous, suggest only
       best = withFace.slice().sort(byArea)[0];
@@ -139,7 +143,10 @@
     const out = { confidence, auto: { rot: false, crop: false } };
     if (best.rot) out.rot = best.rot;
     if (best.box && (best.area || 0) < tiny) out.crop = expandFaceBox(best.box, CROP_EXPAND);
-    out.auto.rot = confidence === 'high' && !!best.rot;
+    // Auto-rotate on high confidence. Without landmark confirmation we trust the
+    // 90°/270° sideways cases but leave the 180° flip as a suggestion (area alone
+    // can't reliably tell an upright face from an upside-down one).
+    out.auto.rot = confidence === 'high' && !!best.rot && (landmarkConfirmed || best.rot !== 180);
     out.auto.crop = confidence === 'high' && !!out.crop && best.faces === 1 && cropIsSafe(best.box, margin);
     return out;
   }
