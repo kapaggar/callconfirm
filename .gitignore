@@ -1,0 +1,20 @@
+# graphify build artifacts — this repo IS the GitHub Pages site,
+# anything committed here gets published at kapaggar.github.io/callconfirm/
+graphify-out/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# local scratch — HAR captures carry session cookies
+*.har
+*.log
+
+# applicant data (PII) must never be published via Pages
+*.xlsx
+*.xls
+*.csv
+aid_mobilenumber.txt
+audit_*.json
