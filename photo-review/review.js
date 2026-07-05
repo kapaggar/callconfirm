@@ -22,8 +22,12 @@
   const MAX_STORE = 1000;
   const DISPLAY_W = 220;   // card canvas display width
   const SCAN_W = 320;      // downscale for face detection
-  const TINY_FACE = 0.04;  // face area below this fraction => suggest crop
-  const CROP_EXPAND = 2.6; // face box expansion factor for suggested crop
+  const TINY_FACE = 0.09;  // face area below this fraction => suggest crop
+                           // (calibrated on course 58/65243: real portraits ran 13-33%,
+                           //  zoom candidates - documents, full-body, framed prints - 1.3-7.3%)
+  const CROP_RATIO = 260 / 280; // crop pixel aspect (w:h) — dipi's photo frame
+  const HEAD_TOP = 0.60;    // extra face-heights above the box (hair / forehead)
+  const HEAD_BOTTOM = 0.60; // extra face-heights below (chin / neck / shoulders)
   const LEVEL_TOL = 0.35;  // eye-line tilt tolerance (|Δy| / eye-spacing) for "upright"
   const AREA_DOMINANCE = 1.5; // one orientation's face must be this× the next to win on area alone
   const CROP_SAFE_MARGIN = 0.12; // face centre must be this far from any edge to auto-crop
@@ -47,14 +51,22 @@
     y = Math.min(Math.max(y, 0), 1 - h);
     return { x, y, w, h };
   }
-  // Expand a normalized face box into a crop suggestion (slightly taller than wide,
-  // biased upward so the crop includes hair/forehead rather than chest)
-  function expandFaceBox(box, factor) {
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-    const w = box.w * factor;
-    const h = box.h * factor * 1.15;
-    return clampCrop({ x: cx - w / 2, y: cy - h / 2 - h * 0.06, w, h });
+  // Passport-style crop around a detected face box: the whole head (hair above,
+  // chin/neck margin below) with the pixel aspect locked to CROP_RATIO (260:280,
+  // dipi's photo frame). box is normalized; imgAspect is the rotated image's W/H,
+  // needed because a normalized rect's pixel aspect depends on the image shape.
+  // Shrinks (keeping ratio) if the head margins run past the frame, then shifts
+  // inside without resizing. Pure.
+  function passportCrop(box, imgAspect, ratio) {
+    if (!box || !(imgAspect > 0)) return null;
+    const R = ratio || CROP_RATIO;
+    let h = box.h * (1 + HEAD_TOP + HEAD_BOTTOM);
+    let w = R * h / imgAspect;
+    if (h > 1) { w /= h; h = 1; }
+    if (w > 1) { h /= w; w = 1; }
+    const x = Math.min(Math.max(box.x + box.w / 2 - w / 2, 0), 1 - w);
+    const y = Math.min(Math.max(box.y - box.h * HEAD_TOP, 0), 1 - h);
+    return { x, y, w, h };
   }
   // Keep the newest `max` entries of the corrections map
   function pruneCorrections(map, max) {
@@ -157,7 +169,7 @@
 
     const out = { confidence, auto: { rot: false, crop: false } };
     if (best.rot) out.rot = best.rot;
-    if (best.box && (best.area || 0) < tiny) out.crop = expandFaceBox(best.box, CROP_EXPAND);
+    if (best.box && (best.area || 0) < tiny) out.crop = passportCrop(best.box, best.aspect || 1);
     // Auto-rotate on high confidence. Without landmark confirmation we trust the
     // 90°/270° sideways cases but leave the 180° flip as a suggestion (area alone
     // can't reliably tell an upright face from an upside-down one).
@@ -411,6 +423,7 @@
       dets.push({
         rot, faces: faces.length,
         area: (b.width * b.height) / (c.width * c.height),
+        aspect: c.width / c.height, // rotated-image shape; passportCrop needs it to lock pixel aspect
         box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height },
         landmarksOk: landmarkOrientationUpright(faces[0].landmarks),
       });
@@ -1085,7 +1098,7 @@
   window.DipiPhotoReview = {
     open, close,
     _internal: {
-      rotatedDims, clampCrop, expandFaceBox, pruneCorrections, photoIdFromUrl, escHtml,
+      rotatedDims, clampCrop, passportCrop, pruneCorrections, photoIdFromUrl, escHtml,
       landmarkOrientationUpright, cropIsSafe, classifyDetections,
       controlToEntries, diffEntries, maskValue, buildUploadBody, uploadFilename,
     },
