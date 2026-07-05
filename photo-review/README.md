@@ -32,6 +32,7 @@ Works on any centre — nothing is hardcoded.
 5. **Keyboard:** ←/→ select card, `r` rotate clockwise, `d` toggle done, `s` download.
 6. **⬇ Download fixed** exports every photo marked ✓ that has a correction (allow multiple downloads when Chrome asks).
 7. Filters: All / ⚠ Suggested / ✨ Auto-fixed / ✓ Fixed / ⏳ Unreviewed.
+8. **♻ Reset local** (header) discards ALL locally saved corrections — every course, not just the open one: rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers. Behind a confirm; cannot be undone. dipi is untouched, so photos already uploaded stay corrected there.
 
 Corrections persist in localStorage and re-apply whenever the same photo ID appears again (re-opening the course, or the same applicant in another course). Once a photo has been **uploaded to dipi**, the stored geometry is zeroed and an `uploaded` marker is kept instead — the fix now lives in dipi's pixels, so re-applying the saved rotation would double-rotate the already-fixed photo (and a later batch upload would write that corruption back). The ⬆dipi button shows ✓dipi until you make a new correction, which re-arms it.
 
