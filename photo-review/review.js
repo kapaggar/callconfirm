@@ -501,6 +501,22 @@
     updatePills();
   }
 
+  // Discard every locally saved correction (the whole store, all courses) and
+  // clear the current grid's markers — rot/crop, ✓ done, ✨ auto, uploaded.
+  // Local-only: nothing on dipi is touched.
+  function resetLocal() {
+    const stored = Object.keys(loadStore()).length;
+    if (!confirm('Reset local photo cache?\n\nThis discards ALL locally saved corrections (' + stored + ' photo(s), across every course): rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers.\n\nPhotos already uploaded to dipi are NOT affected. This cannot be undone.')) return;
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    state.items.forEach(it => {
+      it.rot = 0; it.crop = null; it.done = false; it.auto = false;
+      it.suggestion = null; it.uploaded = false; it.uploadedAt = null;
+      if (it.el) updateCard(it);
+    });
+    updatePills();
+    toast('Local corrections cleared — photos shown as-is from dipi');
+  }
+
   async function uploadAllFixed() {
     const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop) && it.aid && !it.uploaded);
     if (!fixed.length) { toast('No fixed, un-uploaded photos with an AID'); return; }
@@ -543,6 +559,7 @@
       #${OVERLAY_ID} .pr-btn-indigo { background:#6366f1; color:#fff; }
       #${OVERLAY_ID} .pr-btn-gray { background:#475569; color:#fff; }
       #${OVERLAY_ID} .pr-btn-red { background:#dc2626; color:#fff; }
+      #${OVERLAY_ID} .pr-btn-orange { background:#ea580c; color:#fff; }
       #${OVERLAY_ID} .pr-pills { display:flex; gap:6px; width:100%; overflow-x:auto; padding-top:6px; }
       #${OVERLAY_ID} .pr-pill { padding:4px 10px; border-radius:20px; border:none; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; }
       #${OVERLAY_ID} .pr-pill.active { background:#fff; color:#1e293b; }
@@ -973,6 +990,7 @@
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
+        <button class="pr-btn pr-btn-orange" id="pr-reset" title="Discard all locally saved corrections and markers (dipi untouched)">♻ Reset local</button>
         <button class="pr-btn pr-btn-red" id="pr-close">✕ Close</button>
         <div class="pr-pills">
           <button class="pr-pill" data-f="all"></button>
@@ -1013,6 +1031,7 @@
       }
     });
     ov.querySelector('#pr-up-all').addEventListener('click', uploadAllFixed);
+    ov.querySelector('#pr-reset').addEventListener('click', resetLocal);
     ov.querySelectorAll('.pr-pill').forEach(p => p.addEventListener('click', () => { state.filter = p.dataset.f; updatePills(); }));
     document.addEventListener('keydown', onKeyNav);
     updatePills();
