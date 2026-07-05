@@ -22,9 +22,11 @@
   const MAX_STORE = 1000;
   const DISPLAY_W = 220;   // card canvas display width
   const SCAN_W = 320;      // downscale for face detection
-  const TINY_FACE = 0.09;  // face area below this fraction => suggest crop
-                           // (calibrated on course 58/65243: real portraits ran 13-33%,
-                           //  zoom candidates - documents, full-body, framed prints - 1.3-7.3%)
+  const TINY_FACE = 0.15;  // face area below this fraction => suggest passport crop
+                           // (course 58 portraits ran 13-33%; zoom candidates 1.3-7.3%.
+                           //  15% also pulls borderline 9-15% shots into a standard crop)
+  const GOOD_MIN = 0.15;   // scanned face area band badged "good size" — no action needed
+  const GOOD_MAX = 0.45;   // above this the face fills the frame; left neutral
   const CROP_RATIO = 260 / 280; // crop pixel aspect (w:h) — dipi's photo frame
   const HEAD_TOP = 0.60;    // extra face-heights above the box (hair / forehead)
   const HEAD_BOTTOM = 0.60; // extra face-heights below (chin / neck / shoulders)
@@ -613,6 +615,7 @@
       #${OVERLAY_ID} .pr-badge { position:absolute; top:6px; left:6px; background:#f59e0b; color:#fff; font-size:10px; font-weight:700;
         padding:3px 8px; border-radius:6px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.3); }
       #${OVERLAY_ID} .pr-badge.nf { background:#64748b; cursor:default; }
+      #${OVERLAY_ID} .pr-badge.good { background:#16a34a; cursor:default; }
       #${OVERLAY_ID} .pr-badge.auto { background:#6366f1; }
       #${OVERLAY_ID} .pr-meta { padding:8px 10px 2px; }
       #${OVERLAY_ID} .pr-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -728,6 +731,16 @@
         badge.title = detSummary(item); // per-rotation evidence behind the suggestion
         if (!(s && s.noFace)) badge.addEventListener('click', () => applySuggestion(item));
         wrap.appendChild(badge);
+      } else if (item.dets && !item.done) {
+        // scanned, nothing to fix, face well-sized → positive confirmation badge
+        const det = item.dets.find(d => d.rot === item.rot && d.box);
+        if (det && det.area >= GOOD_MIN && det.area <= GOOD_MAX) {
+          const badge = document.createElement('div');
+          badge.className = 'pr-badge good';
+          badge.textContent = '✓ good ' + (100 * det.area).toFixed(0) + '%';
+          badge.title = detSummary(item);
+          wrap.appendChild(badge);
+        }
       }
     }
     el.querySelector('[data-act="done"]').classList.toggle('on', !!item.done);
@@ -1052,6 +1065,7 @@
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay FaceDetector\'s bounding box + face-area % on each photo (run Auto-scan first)">▦ Boxes</button>' : ''}
+        ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-ok-auto" title="Mark every ✨ auto-fixed card ✓ reviewed in one go — eyeball them via the ✨ filter first">✓ Keep auto-fixes</button>' : ''}
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
         <button class="pr-btn pr-btn-orange" id="pr-reset" title="Discard all locally saved corrections and markers (dipi untouched)">♻ Reset local</button>
@@ -1089,6 +1103,17 @@
       ov.querySelector('#pr-boxes').textContent = state.showBoxes ? '▦ Boxes ON' : '▦ Boxes';
       state.items.forEach(it => { if (it.bitmap && it.el) drawCard(it); });
       if (state.showBoxes && !state.items.some(it => it.dets)) toast('Run ⚡ Auto-scan first — boxes come from the scan');
+    });
+    // Bulk-confirm the ✨ auto-fixed batch. Deliberately NOT automatic: auto-fixes
+    // stay unconfirmed until a human looks — this is one click after that look,
+    // not a bypass of it. Local done flags only; nothing is uploaded here.
+    ov.querySelector('#pr-ok-auto')?.addEventListener('click', () => {
+      const batch = state.items.filter(it => it.auto && !it.done);
+      if (!batch.length) { toast('No auto-fixed photos awaiting confirmation'); return; }
+      if (!confirm('Mark ' + batch.length + ' auto-fixed photo(s) as ✓ reviewed?\n\nLook them over first (✨ Auto-fixed filter). This only sets the local done flag — nothing is uploaded to dipi.')) return;
+      batch.forEach(it => { it.done = true; saveCorrection(it); updateCard(it); });
+      updatePills();
+      toast('✓ Kept ' + batch.length + ' auto-fix(es)');
     });
     ov.querySelector('#pr-dl-all').addEventListener('click', async () => {
       const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop));
