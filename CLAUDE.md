@@ -26,7 +26,11 @@ audit side. This file is only the quick orientation.
 - `scraper.js`, `tracker-inline.js`, `course-audit/audit.js`, `course-audit/loader.js`,
   `photo-review/review.js` are fetched with `?v=Date.now()` cache-busting — changes go
   live on next run after push. The `.user.js` shells only update via Tampermonkey daily
-  check; bump `@version`.
+  check.
+- **On EVERY change to a tool, bump `@version` in its `.user.js` shell** (even when only
+  the cache-busted logic file changed) so Tampermonkey users see the update. Mapping:
+  scraper/tracker (`scraper.js`, `tracker-inline.js`) → `scraper.user.js`;
+  audit → `course-audit/userscript.user.js`; photos → `photo-review/userscript.user.js`.
 - Changes to tracker UI logic usually need mirroring in `index.html` (same code, PWA copy).
 - All userscripts share the `#dipi-fab-stack` FAB convention (`data-order`: audit 10, scrape 20, photos 30).
 - Tracker call-status is deliberately decoupled from dipi status; never auto-sync them.
