@@ -687,6 +687,18 @@
         ctx.fillText('face ' + (100 * (det.area || 0)).toFixed(1) + '%' + (det.faces > 1 ? ' (+' + (det.faces - 1) + ')' : ''),
           det.box.x * cv.width + 3, Math.max(12, det.box.y * cv.height - 5));
       }
+      // Preview of the suggested passport crop (dashed green) so it can be judged
+      // before clicking the badge. Crop coords are normalized to the suggested
+      // rotation's frame, so only drawable when that matches what's displayed.
+      const s = item.suggestion;
+      if (s && s.crop && (s.rot === undefined || s.rot === item.rot)) {
+        ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+        ctx.strokeRect(s.crop.x * cv.width, s.crop.y * cv.height, s.crop.w * cv.width, s.crop.h * cv.height);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#4ade80'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('crop 260:280', s.crop.x * cv.width + 3,
+          Math.min(cv.height - 5, (s.crop.y + s.crop.h) * cv.height - 5));
+      }
     }
   }
 
