@@ -122,12 +122,19 @@
     const anyLandmarkInfo = withFace.some(d => d.landmarksOk === true || d.landmarksOk === false);
 
     let best, confidence, landmarkConfirmed = false;
+    const det0 = withFace.find(d => d.rot === 0) || null;
     if (landmarkWins.length) {
-      best = landmarkWins[0];
-      // one upright orientation = confident; several = only if one dominates on area
-      confidence = (landmarkWins.length === 1 ||
-        best.area > (landmarkWins[1].area || 0) * dom) ? 'high' : 'medium';
-      landmarkConfirmed = confidence === 'high';
+      // an upright-confirmed face at rot 0 means the photo is already fine —
+      // prefer it over a bigger face at some other rotation
+      const zero = landmarkWins.find(d => d.rot === 0);
+      if (zero) { best = zero; confidence = 'high'; landmarkConfirmed = true; }
+      else {
+        best = landmarkWins[0];
+        // one upright orientation = confident; several = only if one dominates on area
+        confidence = (landmarkWins.length === 1 ||
+          best.area > (landmarkWins[1].area || 0) * dom) ? 'high' : 'medium';
+        landmarkConfirmed = confidence === 'high';
+      }
     } else if (!anyLandmarkInfo) {
       // No landmark data anywhere (Chrome/macOS returns boxes but no eyes/nose/mouth):
       // fall back to area — the correct orientation usually detects a clearly bigger
@@ -135,9 +142,16 @@
       const sorted = withFace.slice().sort(byArea);
       best = sorted[0];
       confidence = (sorted.length === 1 || best.area > (sorted[1].area || 0) * dom) ? 'high' : 'medium';
+      // FaceDetector also "finds" faces at wrong rotations, so when rot 0 sees a
+      // face and no other rotation clearly dominates it, keep the photo as-is
+      // rather than suggesting whichever rotation scored the biggest box.
+      if (det0 && best.rot !== 0 && (best.area || 0) <= (det0.area || 0) * dom) {
+        best = det0;
+        confidence = 'medium';
+      }
     } else {
-      // landmarks existed but none confirmed upright → ambiguous, suggest only
-      best = withFace.slice().sort(byArea)[0];
+      // landmarks existed but none confirmed upright → ambiguous; prefer as-is
+      best = det0 || withFace.slice().sort(byArea)[0];
       confidence = 'medium';
     }
 
@@ -401,11 +415,21 @@
         landmarksOk: landmarkOrientationUpright(faces[0].landmarks),
       });
     }
+    item.dets = dets; // kept for the ▦ Boxes overlay and the badge tooltip
     return classifyDetections(dets, { tinyFace: TINY_FACE });
   }
 
+  // One line per rotation tried: face area % and landmark verdict — this is the
+  // raw evidence behind a suggestion, surfaced so thresholds can be calibrated.
+  function detSummary(item) {
+    if (!item.dets) return '';
+    return item.dets.map(d => d.rot + '°: ' + (d.faces
+      ? (100 * (d.area || 0)).toFixed(1) + '%' + (d.landmarksOk === true ? ' ✓lm' : d.landmarksOk === false ? ' ✗lm' : '')
+      : 'no face')).join('  ·  ');
+  }
+
   // ── State ──
-  const state = { items: [], filter: 'all', sel: -1, scanning: false };
+  const state = { items: [], filter: 'all', sel: -1, scanning: false, showBoxes: false };
 
   function counts() {
     const c = { all: state.items.length, suggested: 0, autofixed: 0, fixed: 0, unreviewed: 0 };
@@ -638,6 +662,19 @@
     cv.width = DISPLAY_W;
     cv.height = Math.max(1, Math.round(src.height * scale));
     ctx.drawImage(src, 0, 0, cv.width, cv.height);
+    // ▦ Boxes: overlay what FaceDetector saw for the displayed rotation. Box
+    // coords are normalized to the rotated (uncropped) frame, so skip when a
+    // crop is active — they would no longer line up.
+    if (state.showBoxes && item.dets && !item.crop) {
+      const det = item.dets.find(d => d.rot === item.rot && d.box);
+      if (det) {
+        ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
+        ctx.strokeRect(det.box.x * cv.width, det.box.y * cv.height, det.box.w * cv.width, det.box.h * cv.height);
+        ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('face ' + (100 * (det.area || 0)).toFixed(1) + '%' + (det.faces > 1 ? ' (+' + (det.faces - 1) + ')' : ''),
+          det.box.x * cv.width + 3, Math.max(12, det.box.y * cv.height - 5));
+      }
+    }
   }
 
   function updateCard(item) {
@@ -663,6 +700,7 @@
         const badge = document.createElement('div');
         badge.className = 'pr-badge' + (s && s.noFace ? ' nf' : '');
         badge.textContent = wants;
+        badge.title = detSummary(item); // per-rotation evidence behind the suggestion
         if (!(s && s.noFace)) badge.addEventListener('click', () => applySuggestion(item));
         wrap.appendChild(badge);
       }
@@ -988,6 +1026,7 @@
         </div>
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
+        ${hasFaceDetector ? '<button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay FaceDetector\'s bounding box + face-area % on each photo (run Auto-scan first)">▦ Boxes</button>' : ''}
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
         <button class="pr-btn pr-btn-orange" id="pr-reset" title="Discard all locally saved corrections and markers (dipi untouched)">♻ Reset local</button>
@@ -1020,6 +1059,12 @@
     ov.querySelector('#pr-close').addEventListener('click', close);
     ov.querySelector('#pr-scan')?.addEventListener('click', autoScan);
     ov.querySelector('#pr-autofix')?.addEventListener('click', autoFix);
+    ov.querySelector('#pr-boxes')?.addEventListener('click', () => {
+      state.showBoxes = !state.showBoxes;
+      ov.querySelector('#pr-boxes').textContent = state.showBoxes ? '▦ Boxes ON' : '▦ Boxes';
+      state.items.forEach(it => { if (it.bitmap && it.el) drawCard(it); });
+      if (state.showBoxes && !state.items.some(it => it.dets)) toast('Run ⚡ Auto-scan first — boxes come from the scan');
+    });
     ov.querySelector('#pr-dl-all').addEventListener('click', async () => {
       const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop));
       if (!fixed.length) { toast('No fixed photos yet — mark corrections ✓ done first'); return; }
