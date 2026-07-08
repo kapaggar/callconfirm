@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dipi.vridhamma.org Photo Review
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.5.0
+// @version      1.6.0
 // @description  Review and correct applicant photos (rotate / crop) on dipi search-course pages. Local by default; explicit ⬆dipi write-back. Adds a 📷 Photos button to the shared FAB stack.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*

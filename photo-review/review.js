@@ -1065,7 +1065,7 @@
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
         ${hasFaceDetector ? '<button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay FaceDetector\'s bounding box + face-area % on each photo (run Auto-scan first)">▦ Boxes</button>' : ''}
-        ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-ok-auto" title="Mark every ✨ auto-fixed card ✓ reviewed in one go — eyeball them via the ✨ filter first">✓ Keep auto-fixes</button>' : ''}
+        <button class="pr-btn pr-btn-indigo" id="pr-ok-auto" title="Consent to every modification made so far (auto + manual): all corrected photos are marked ✓ fixed, ready for ⬆ Upload fixed to dipi">✓ Accept all fixes</button>
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
         <button class="pr-btn pr-btn-orange" id="pr-reset" title="Discard all locally saved corrections and markers (dipi untouched)">♻ Reset local</button>
@@ -1104,16 +1104,21 @@
       state.items.forEach(it => { if (it.bitmap && it.el) drawCard(it); });
       if (state.showBoxes && !state.items.some(it => it.dets)) toast('Run ⚡ Auto-scan first — boxes come from the scan');
     });
-    // Bulk-confirm the ✨ auto-fixed batch. Deliberately NOT automatic: auto-fixes
-    // stay unconfirmed until a human looks — this is one click after that look,
-    // not a bypass of it. Local done flags only; nothing is uploaded here.
+    // Bulk-consent: every modification made so far (✨ auto-fixes, applied
+    // suggestions, manual rotates/crops) is accepted and marked ✓ fixed, making
+    // it eligible for ⬆ Upload fixed to dipi as the next step. Deliberately NOT
+    // automatic — this is one click after a human look, not a bypass of it.
+    // Local done flags only; nothing is uploaded here.
     ov.querySelector('#pr-ok-auto')?.addEventListener('click', () => {
-      const batch = state.items.filter(it => it.auto && !it.done);
-      if (!batch.length) { toast('No auto-fixed photos awaiting confirmation'); return; }
-      if (!confirm('Mark ' + batch.length + ' auto-fixed photo(s) as ✓ reviewed?\n\nLook them over first (✨ Auto-fixed filter). This only sets the local done flag — nothing is uploaded to dipi.')) return;
+      const batch = state.items.filter(it => !it.done && (it.rot !== 0 || it.crop));
+      if (!batch.length) { toast('No corrected photos awaiting acceptance'); return; }
+      const autos = batch.filter(it => it.auto).length;
+      if (!confirm('Accept all ' + batch.length + ' modified photo(s) as ✓ fixed?' +
+        (autos ? '\n(' + autos + ' of them are ✨ auto-fixes — look them over via the ✨ filter first.)' : '') +
+        '\n\nThey become eligible for "⬆ Upload fixed to dipi" as the next step. Nothing is uploaded yet.')) return;
       batch.forEach(it => { it.done = true; saveCorrection(it); updateCard(it); });
       updatePills();
-      toast('✓ Kept ' + batch.length + ' auto-fix(es)');
+      toast('✓ Accepted ' + batch.length + ' fix(es) — ready for ⬆ Upload fixed to dipi');
     });
     ov.querySelector('#pr-dl-all').addEventListener('click', async () => {
       const fixed = state.items.filter(it => it.done && (it.rot !== 0 || it.crop));
