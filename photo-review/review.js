@@ -442,10 +442,15 @@
       minDetectionConfidence: 0.5,
     });
   }
+  // Chrome Web Store policy (MV3): never fetch/execute remote code from the
+  // extension. When this file was loaded from chrome-extension:// the CDN
+  // fallback is excluded entirely — extension installs are fully self-hosted.
+  // The CDN list only applies to the github.io / bookmarklet distribution.
+  const MP_IS_EXT = !!(MP_SELF && MP_SELF.indexOf('chrome-extension:') === 0);
   async function getMpDetector() {
     if (mpDetector || mpTried) return mpDetector;
     mpTried = true;
-    for (const src of [MP_LOCAL, MP_CDN]) {
+    for (const src of (MP_IS_EXT ? [MP_LOCAL] : [MP_LOCAL, MP_CDN])) {
       if (!src) continue;
       try { mpDetector = await mpFrom(src); break; }
       catch (e) { mpDetector = null; } // missing vendor files / CDN blocked → next source

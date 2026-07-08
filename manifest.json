@@ -2,7 +2,13 @@
   "manifest_version": 3,
   "name": "DIPI Tools (Audit / Scrape / Photos)",
   "version": "1.0.0",
-  "description": "FAB launcher for the DIPI call tracker, course audit and photo review on *.vridhamma.org. Personal use; load unpacked from the git checkout (update = git pull + reload).",
+  "description": "Adds Audit, Scrape and Photos buttons to dipi.vridhamma.org course pages for Vipassana course-admin volunteers: pre-course data-quality audit, confirmation-call tracker, applicant photo review. All data stays in the browser.",
+  "homepage_url": "https://github.com/kapaggar/callconfirm",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
       "matches": ["https://*.vridhamma.org/*"],
