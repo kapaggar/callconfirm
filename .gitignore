@@ -18,3 +18,7 @@ Thumbs.db
 *.csv
 aid_mobilenumber.txt
 audit_*.json
+
+# Chrome Web Store listing assets (screenshots contain pixelated applicant
+# derivatives — keep local, never publish via Pages)
+store-assets/
