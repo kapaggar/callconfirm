@@ -2,9 +2,9 @@
 
 Personal browser tooling for Dhamma Sudha Vipassana centre (centre 63 on dipi.vridhamma.org):
 a call-confirmation tracker plus a pre-course data-quality audit. Vanilla JS, no build step,
-no tests, no dependencies except one: photo-review loads MediaPipe tasks-vision (pinned
-version, on-device WASM) from the CDN at runtime for face detection.
-Deployed by pushing to `main` — GitHub Pages serves the repo at
+no tests, no dependencies except one: photo-review uses MediaPipe tasks-vision (pinned,
+on-device WASM) for face detection — self-hosted under `vendor/mediapipe/` with the CDN as
+fallback. Deployed by pushing to `main` — GitHub Pages serves the repo at
 `https://kapaggar.github.io/callconfirm/`.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
@@ -19,8 +19,11 @@ audit side. This file is only the quick orientation.
 | `tracker-inline.js` | Calling dashboard rendered as overlay on the dipi page; IndexedDB `vcall_inline` |
 | `scraper.user.js` | Tampermonkey shell (FAB buttons, auto-run); bump `@version` when editing it |
 | `launcher.js` | All-in-one bookmarklet target (`bookmarklet-all.txt`); adds all 3 FAB buttons, tools load on demand |
+| `manifest.json` | Chrome extension (MV3) manifest — the repo root IS the extension (load unpacked) |
+| `extension-fab.js` | Extension content script (isolated world); injects the bundled tools into the page's MAIN world |
+| `vendor/mediapipe/` | Self-hosted face-detection lib + model, pinned; hashes in its README |
 | `index.html` | Legacy PWA fallback at github.io; duplicates the tracker UI code |
-| `sw.js`, `manifest.json`, `setup.html` | PWA plumbing for the fallback |
+| `sw.js`, `manifest.webmanifest`, `setup.html` | PWA plumbing for the fallback (`manifest.json` now belongs to the extension) |
 | `course-audit/` | Separate rule-engine + panel (audit.js / loader.js / userscript.user.js) |
 | `photo-review/` | Applicant photo rotate/crop overlay, local-only (review.js / userscript.user.js) |
 
@@ -36,6 +39,9 @@ audit side. This file is only the quick orientation.
   audit → `course-audit/userscript.user.js`; photos → `photo-review/userscript.user.js`.
 - Changes to tracker UI logic usually need mirroring in `index.html` (same code, PWA copy).
 - All userscripts share the `#dipi-fab-stack` FAB convention (`data-order`: audit 10, scrape 20, photos 30).
+- The Chrome extension shares the same tool files (single source of truth) and dedupes FAB
+  buttons by DOM id, but don't run the Tampermonkey shells and the extension in one profile —
+  auto-run can fire twice. Extension updates = `git pull` + reload (cache-busting is inert there).
 - Tracker call-status is deliberately decoupled from dipi status; never auto-sync them.
 - `localStorage.dipiTracker.sessionIndex` (keyed `centreid/courseid`) is how the scraper detects
   an in-progress session; the tracker writes it on import and every save.

@@ -19,6 +19,9 @@ Architecture and hand-off notes: `CALL-TRACKER-MEMORY.md` (read this first when 
 ```
 launcher.js            ← All-in-one bookmarklet target: adds 🔍 📥 📷 buttons
 bookmarklet-all.txt    ← The all-in-one bookmarklet (drag to bookmarks bar)
+manifest.json          ← Chrome extension (MV3) manifest — repo root IS the extension
+extension-fab.js       ← Extension content script (same FAB buttons)
+vendor/mediapipe/      ← Self-hosted face-detection lib + model (pinned, ~18 MB)
 scraper.js             ← DIPI scraper (course picker + applicant scrape)
 tracker-inline.js      ← Calling dashboard overlay
 scraper.user.js        ← Tampermonkey shell (scraper/tracker)
@@ -26,7 +29,8 @@ course-audit/          ← Audit rule engine + panel + shell
 photo-review/          ← Photo review overlay + shell
 index.html             ← Legacy PWA fallback (github.io)
 setup.html             ← One-time bookmarklet installer
-manifest.json, sw.js   ← PWA config + offline support
+manifest.webmanifest   ← PWA config (renamed; manifest.json is the extension's)
+sw.js                  ← PWA offline support
 ```
 
 ## Deploy
@@ -48,6 +52,12 @@ Two options:
   `scraper.user.js`, `course-audit/userscript.user.js`,
   `photo-review/userscript.user.js` — for the same buttons, auto-added on
   every `/search-course/` page.
+- **Chrome extension (desktop, no Tampermonkey needed):** `git clone` this
+  repo, open `chrome://extensions` → enable Developer mode → **Load unpacked**
+  → pick the repo root. Same buttons, everything bundled (face detection works
+  offline). Update = `git pull` + the extension's reload button. Don't run the
+  Tampermonkey userscripts in the same profile (buttons dedupe, but auto-run
+  can fire twice).
 
 ## Usage
 
