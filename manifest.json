@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DIPI Tools (Audit / Scrape / Photos)",
   "version": "1.0.0",
-  "description": "Adds Audit, Scrape and Photos buttons to dipi.vridhamma.org course pages for Vipassana course-admin volunteers: pre-course data-quality audit, confirmation-call tracker, applicant photo review. All data stays in the browser.",
+  "description": "Audit, Scrape and Photos tools for dipi.vridhamma.org course admin volunteers. All data stays in the browser.",
   "homepage_url": "https://github.com/kapaggar/callconfirm",
   "icons": {
     "16": "icons/icon16.png",
