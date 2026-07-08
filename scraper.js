@@ -12,8 +12,15 @@
   var CENTRE_URL = '/centre/' + CID;
   var SEARCH_BASE = '/search-course/' + CID + '/';
   var STATUS_FILTER = 'Expected,Confirmed';
+  // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
+  // wins, else derive from this script's own URL (works for github.io AND the
+  // chrome-extension:// copy — must run synchronously; currentScript is null
+  // later), else the github.io default. PWA stays github.io: "Open in PWA"
+  // should open the hosted app, never a chrome-extension URL.
+  var SELF_BASE = (document.currentScript && document.currentScript.src)
+    ? new URL('.', document.currentScript.src).href.replace(/\/+$/, '') : null;
   var PWA = window._DIPI_PWA_URL || 'https://kapaggar.github.io/callconfirm';
-  var TRACKER_BASE = window._DIPI_TRACKER_BASE || 'https://kapaggar.github.io/callconfirm';
+  var TRACKER_BASE = window._DIPI_TRACKER_BASE || SELF_BASE || 'https://kapaggar.github.io/callconfirm';
 
   // Expose API for re-scrape from inline tracker
   window.DipiScraper = { run: runScraper, pick: pickCourse };

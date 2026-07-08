@@ -1,5 +1,7 @@
-const CACHE = "vcall-v2";
-const ASSETS = ["./", "./index.html", "./manifest.json"];
+// v3: manifest.json is now the Chrome-extension MV3 manifest; the PWA manifest
+// moved to manifest.webmanifest. Cache bump evicts the precached old path.
+const CACHE = "vcall-v3";
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

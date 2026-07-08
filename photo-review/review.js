@@ -413,25 +413,44 @@
   // orientation there rests on the weaker area heuristics.
   const hasFaceDetector = ('FaceDetector' in window);
   const MP_VERSION = '0.10.14'; // pinned — bump deliberately, never "latest"
-  const MP_BUNDLE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/vision_bundle.mjs';
-  const MP_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/wasm';
-  const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+  // Self-hosted assets first (repo vendor/mediapipe/, hashes in its README):
+  // derive the base from this script's own URL, so the same file works from
+  // github.io and from the chrome-extension:// copy. Must run synchronously at
+  // load — document.currentScript is null in callbacks. Pinned CDN URLs remain
+  // as fallback for partial deploys / stale checkouts.
+  const MP_SELF = (() => {
+    const cs = document.currentScript;
+    return (cs && cs.src) ? new URL('../vendor/mediapipe/', cs.src).href : null;
+  })();
+  const MP_LOCAL = MP_SELF && {
+    bundle: MP_SELF + 'vision_bundle.mjs',
+    wasm: MP_SELF + 'wasm',
+    model: MP_SELF + 'blaze_face_short_range.tflite',
+  };
+  const MP_CDN = {
+    bundle: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/vision_bundle.mjs',
+    wasm: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/wasm',
+    model: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+  };
   let mpDetector = null, mpTried = false;
+  async function mpFrom(src) {
+    const vision = await import(src.bundle);
+    const files = await vision.FilesetResolver.forVisionTasks(src.wasm);
+    return vision.FaceDetector.createFromOptions(files, {
+      baseOptions: { modelAssetPath: src.model },
+      runningMode: 'IMAGE',
+      minDetectionConfidence: 0.5,
+    });
+  }
   async function getMpDetector() {
     if (mpDetector || mpTried) return mpDetector;
     mpTried = true;
-    try {
-      const vision = await import(MP_BUNDLE);
-      const files = await vision.FilesetResolver.forVisionTasks(MP_WASM);
-      mpDetector = await vision.FaceDetector.createFromOptions(files, {
-        baseOptions: { modelAssetPath: MP_MODEL },
-        runningMode: 'IMAGE',
-        minDetectionConfidence: 0.5,
-      });
-    } catch (e) {
-      mpDetector = null; // CDN blocked / offline / CSP → native FaceDetector fallback
+    for (const src of [MP_LOCAL, MP_CDN]) {
+      if (!src) continue;
+      try { mpDetector = await mpFrom(src); break; }
+      catch (e) { mpDetector = null; } // missing vendor files / CDN blocked → next source
     }
-    return mpDetector;
+    return mpDetector; // null → native FaceDetector fallback
   }
 
   // MediaPipe keypoint order: 0 right eye, 1 left eye, 2 nose tip, 3 mouth,
