@@ -330,6 +330,13 @@ Architecture:
 - If dipi ever ships a strict CSP that blocks extension script tags, the fallback design is
   `"world": "MAIN"` content scripts (needs `scripting` + host permissions) — documented,
   not built.
+- **Chrome Web Store packaging:** review.js excludes the MediaPipe CDN fallback when loaded
+  from `chrome-extension://` (MV3 remote-code policy; the CDN URLs only serve the github.io
+  path). Store zip = extension files only, built with:
+  `zip -r dipi-tools-<version>.zip manifest.json extension-fab.js scraper.js tracker-inline.js course-audit/loader.js course-audit/audit.js photo-review/review.js vendor/mediapipe icons`
+  Each store release: bump `"version"` in manifest.json, rebuild zip, upload in the dev
+  console (re-review takes hours-days). Store listing screenshots must never contain real
+  applicant data.
 
 ---
 
