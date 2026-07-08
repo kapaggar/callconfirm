@@ -1,0 +1,1 @@
+javascript:void(function(){var b='https://kapaggar.github.io/callconfirm';window._DIPI_PWA_URL=b;window._DIPI_TRACKER_BASE=b;var s=document.createElement('script');s.src=b+'/launcher.js?v='+Date.now();document.head.appendChild(s)}());

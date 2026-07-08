@@ -18,6 +18,7 @@ audit side. This file is only the quick orientation.
 | `scraper.js` | Scrapes applicants from the DataTable on dipi `/search-course/` pages |
 | `tracker-inline.js` | Calling dashboard rendered as overlay on the dipi page; IndexedDB `vcall_inline` |
 | `scraper.user.js` | Tampermonkey shell (FAB buttons, auto-run); bump `@version` when editing it |
+| `launcher.js` | All-in-one bookmarklet target (`bookmarklet-all.txt`); adds all 3 FAB buttons, tools load on demand |
 | `index.html` | Legacy PWA fallback at github.io; duplicates the tracker UI code |
 | `sw.js`, `manifest.json`, `setup.html` | PWA plumbing for the fallback |
 | `course-audit/` | Separate rule-engine + panel (audit.js / loader.js / userscript.user.js) |
