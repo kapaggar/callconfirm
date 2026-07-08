@@ -34,4 +34,4 @@ curl -L -o vendor/mediapipe/blaze_face_short_range.tflite \
 | `wasm/vision_wasm_internal.wasm` | `f82a8e6c05e08a44cc9f9e7ec5f845935bcbb1b1500ebe8c2f4812fb4e2917dc` |
 | `wasm/vision_wasm_nosimd_internal.js` | `abe9b6fbeaf86fcb53a5edce3926c82ccb0619e18fed4d9d9ce561ee7f55e054` |
 | `wasm/vision_wasm_nosimd_internal.wasm` | `38b61feab2fd7934e05cbe9f68baa308978a5e3b7f85c1913bb8ae89b8ef8b97` |
-| `blaze_face_short_range.tflite` | _record after fetch (blocked in the dev sandbox; fetch manually)_ |
+| `blaze_face_short_range.tflite` | `b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f` |
