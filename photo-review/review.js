@@ -22,10 +22,10 @@
   const MAX_STORE = 1000;
   const DISPLAY_W = 220;   // card canvas display width
   const SCAN_W = 320;      // downscale for face detection
-  const TINY_FACE = 0.15;  // face area below this fraction => suggest passport crop
+  const TINY_FACE = 0.20;  // face area below this fraction => suggest passport crop
                            // (course 58 portraits ran 13-33%; zoom candidates 1.3-7.3%.
-                           //  15% also pulls borderline 9-15% shots into a standard crop)
-  const GOOD_MIN = 0.15;   // scanned face area band badged "good size" — no action needed
+                           //  20% pulls every borderline shot into a standard crop)
+  const GOOD_MIN = 0.20;   // scanned face area band badged "good size" — no action needed
   const GOOD_MAX = 0.45;   // above this the face fills the frame; left neutral
   const CROP_RATIO = 260 / 280; // crop pixel aspect (w:h) — dipi's photo frame
   const HEAD_TOP = 0.60;    // extra face-heights above the box (hair / forehead)
@@ -402,13 +402,83 @@
     }
   }
 
-  // ── Face detection auto-suggest (Chrome only; on-device) ──
+  // ── Face detection backends ──
+  // Preferred: MediaPipe tasks-vision (BlazeFace, WASM) — runs fully on-device,
+  // returns eye/nose/mouth keypoints so "upright" can be confirmed at each
+  // rotation, and it barely detects faces at wrong rotations (clean signal).
+  // The library + model (~3 MB) are fetched once from pinned CDN URLs; photos
+  // never leave the browser with either backend.
+  // Fallback: native window.FaceDetector (Chrome behind a flag) — on macOS it
+  // returns boxes without landmarks and detects sideways faces at rot 0, so
+  // orientation there rests on the weaker area heuristics.
   const hasFaceDetector = ('FaceDetector' in window);
+  const MP_VERSION = '0.10.14'; // pinned — bump deliberately, never "latest"
+  const MP_BUNDLE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/vision_bundle.mjs';
+  const MP_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/wasm';
+  const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+  let mpDetector = null, mpTried = false;
+  async function getMpDetector() {
+    if (mpDetector || mpTried) return mpDetector;
+    mpTried = true;
+    try {
+      const vision = await import(MP_BUNDLE);
+      const files = await vision.FilesetResolver.forVisionTasks(MP_WASM);
+      mpDetector = await vision.FaceDetector.createFromOptions(files, {
+        baseOptions: { modelAssetPath: MP_MODEL },
+        runningMode: 'IMAGE',
+        minDetectionConfidence: 0.5,
+      });
+    } catch (e) {
+      mpDetector = null; // CDN blocked / offline / CSP → native FaceDetector fallback
+    }
+    return mpDetector;
+  }
+
+  // MediaPipe keypoint order: 0 right eye, 1 left eye, 2 nose tip, 3 mouth,
+  // 4/5 ear tragions. Upright = eye line level AND eyes above nose and mouth.
+  // Returns true/false, or null when keypoints are missing. (pure)
+  function keypointsUpright(kps) {
+    if (!Array.isArray(kps) || kps.length < 4) return null;
+    const [eyeR, eyeL, nose, mouth] = kps;
+    if ([eyeR, eyeL, nose, mouth].some(p => !p || typeof p.x !== 'number' || typeof p.y !== 'number')) return null;
+    const spacing = Math.hypot(eyeL.x - eyeR.x, eyeL.y - eyeR.y);
+    if (!(spacing > 1e-6)) return null;
+    const level = Math.abs(eyeL.y - eyeR.y) / spacing < LEVEL_TOL;
+    const avgEyeY = (eyeR.y + eyeL.y) / 2;
+    return level && avgEyeY < mouth.y && avgEyeY < nose.y;
+  }
+
+  // Detect faces on a canvas via the best available backend. Returns a list of
+  // { box (normalized), upright (true/false/null) } sorted by area desc, or
+  // null when no backend is available at all.
+  let nativeFd = null;
+  async function detectOn(canvas) {
+    const mp = await getMpDetector();
+    if (mp) {
+      const res = mp.detect(canvas);
+      return (res.detections || []).map(d => ({
+        box: {
+          x: d.boundingBox.originX / canvas.width, y: d.boundingBox.originY / canvas.height,
+          w: d.boundingBox.width / canvas.width, h: d.boundingBox.height / canvas.height,
+        },
+        upright: keypointsUpright(d.keypoints),
+      })).sort((a, b) => (b.box.w * b.box.h) - (a.box.w * a.box.h));
+    }
+    if (!hasFaceDetector) return null;
+    // fastMode:false yields landmarks where the platform provides them
+    if (!nativeFd) nativeFd = new window.FaceDetector({ maxDetectedFaces: 2, fastMode: false });
+    const faces = await nativeFd.detect(canvas);
+    return faces.map(f => ({
+      box: {
+        x: f.boundingBox.x / canvas.width, y: f.boundingBox.y / canvas.height,
+        w: f.boundingBox.width / canvas.width, h: f.boundingBox.height / canvas.height,
+      },
+      upright: landmarkOrientationUpright(f.landmarks),
+    })).sort((a, b) => (b.box.w * b.box.h) - (a.box.w * a.box.h));
+  }
+
   async function suggestFor(item) {
-    if (!hasFaceDetector || !item.bitmap) return null;
-    // fastMode:false yields landmarks (eyes/nose/mouth) so we can tell upright from
-    // upside-down; maxDetectedFaces:2 lets us spot group/ID-duplicate shots (no auto-crop).
-    const fd = new window.FaceDetector({ maxDetectedFaces: 2, fastMode: false });
+    if (!item.bitmap) return null;
     const dets = [];
     for (const rot of [0, 90, 270, 180]) {
       const [rw, rh] = rotatedDims(item.bitmap.width, item.bitmap.height, rot);
@@ -417,17 +487,17 @@
       c.width = Math.max(1, Math.round(rw * scale));
       c.height = Math.max(1, Math.round(rh * scale));
       drawRotated(c.getContext('2d'), item.bitmap, rot, c.width, c.height);
-      let faces = [];
-      try { faces = await fd.detect(c); } catch (e) { return null; }
+      let faces;
+      try { faces = await detectOn(c); } catch (e) { return null; }
+      if (faces === null) return null; // no detection backend available
       if (!faces.length) { dets.push({ rot, faces: 0 }); continue; }
-      faces.sort((a, b) => (b.boundingBox.width * b.boundingBox.height) - (a.boundingBox.width * a.boundingBox.height));
-      const b = faces[0].boundingBox;
+      const f = faces[0];
       dets.push({
         rot, faces: faces.length,
-        area: (b.width * b.height) / (c.width * c.height),
+        area: f.box.w * f.box.h,
         aspect: c.width / c.height, // rotated-image shape; passportCrop needs it to lock pixel aspect
-        box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height },
-        landmarksOk: landmarkOrientationUpright(faces[0].landmarks),
+        box: f.box,
+        landmarksOk: f.upright,
       });
     }
     item.dets = dets; // kept for the ▦ Boxes overlay and the badge tooltip
@@ -949,9 +1019,13 @@
 
   // ── Auto-scan all loaded photos ──
   async function autoScan() {
-    if (!hasFaceDetector) { toast('FaceDetector not available in this browser — manual review only'); return; }
     if (state.scanning) return;
     state.scanning = true;
+    if (!mpDetector && !mpTried) toast('Loading on-device face model (~3 MB, one-time)…');
+    if (!(await getMpDetector()) && !hasFaceDetector) {
+      toast('No face detection available — model CDN unreachable and no native FaceDetector. Manual review only.');
+      state.scanning = false; return;
+    }
     const btn = document.getElementById('pr-scan');
     let n = 0;
     for (const item of state.items) {
@@ -973,9 +1047,13 @@
   // Only writes local corrections and never marks a card done — every auto fix
   // still needs a human ✓ (or a revert). Nothing is uploaded to dipi here.
   async function autoFix() {
-    if (!hasFaceDetector) { toast('FaceDetector not available in this browser — manual review only'); return; }
     if (state.scanning) return;
     state.scanning = true;
+    if (!mpDetector && !mpTried) toast('Loading on-device face model (~3 MB, one-time)…');
+    if (!(await getMpDetector()) && !hasFaceDetector) {
+      toast('No face detection available — model CDN unreachable and no native FaceDetector. Manual review only.');
+      state.scanning = false; return;
+    }
     const btn = document.getElementById('pr-autofix');
     let n = 0, fixed = 0, suggested = 0, manual = 0;
     for (const item of state.items) {
@@ -1062,9 +1140,9 @@
         <div class="pr-title">📷 Photo Review
           <span class="sub">${escHtml(courseKey)} · ${state.items.length} photo(s) · corrections are local until you upload to dipi</span>
         </div>
-        ${hasFaceDetector ? '<button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>' : ''}
-        ${hasFaceDetector ? '<button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>' : ''}
-        ${hasFaceDetector ? '<button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay FaceDetector\'s bounding box + face-area % on each photo (run Auto-scan first)">▦ Boxes</button>' : ''}
+        <button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>
+        <button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>
+        <button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay the detected face box + area % on each photo (run Auto-scan first)">▦ Boxes</button>
         <button class="pr-btn pr-btn-indigo" id="pr-ok-auto" title="Consent to every modification made so far (auto + manual): all corrected photos are marked ✓ fixed, ready for ⬆ Upload fixed to dipi">✓ Accept all fixes</button>
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
@@ -1141,7 +1219,7 @@
     open, close,
     _internal: {
       rotatedDims, clampCrop, passportCrop, pruneCorrections, photoIdFromUrl, escHtml,
-      landmarkOrientationUpright, cropIsSafe, classifyDetections,
+      landmarkOrientationUpright, keypointsUpright, cropIsSafe, classifyDetections,
       controlToEntries, diffEntries, maskValue, buildUploadBody, uploadFilename,
     },
   };

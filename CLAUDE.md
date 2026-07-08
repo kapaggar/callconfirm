@@ -2,7 +2,9 @@
 
 Personal browser tooling for Dhamma Sudha Vipassana centre (centre 63 on dipi.vridhamma.org):
 a call-confirmation tracker plus a pre-course data-quality audit. Vanilla JS, no build step,
-no dependencies, no tests. Deployed by pushing to `main` — GitHub Pages serves the repo at
+no tests, no dependencies except one: photo-review loads MediaPipe tasks-vision (pinned
+version, on-device WASM) from the CDN at runtime for face detection.
+Deployed by pushing to `main` — GitHub Pages serves the repo at
 `https://kapaggar.github.io/callconfirm/`.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
