@@ -324,15 +324,22 @@ Architecture:
 - `scraper.js` derives `TRACKER_BASE` from `document.currentScript.src` when the
   `_DIPI_TRACKER_BASE` global is unset (same pattern as `course-audit/loader.js`), so
   `tracker-inline.js` loads from the extension. `photo-review/review.js` likewise derives
-  a `vendor/mediapipe/` base from its own URL, local-first with the pinned CDN as fallback.
+  a `vendor/mediapipe/` base from its own URL — self-hosted only, no CDN.
 - Don't run the Tampermonkey shells and the extension in the same profile: buttons dedupe
   by id, but auto-run can fire twice (cosmetic — tools tear down their own overlays).
 - If dipi ever ships a strict CSP that blocks extension script tags, the fallback design is
   `"world": "MAIN"` content scripts (needs `scripting` + host permissions) — documented,
   not built.
-- **Chrome Web Store packaging:** review.js excludes the MediaPipe CDN fallback when loaded
-  from `chrome-extension://` (MV3 remote-code policy; the CDN URLs only serve the github.io
-  path). Store zip = extension files only, built with:
+- **Chrome Web Store packaging — remote-code policy (learned from rejection "Blue Argon",
+  v1.0.0):** the reviewer flags ANY remote https URL that can feed script loading, even
+  unreachable fallbacks. Rules for every file shipped in the zip: (1) no remote-URL string
+  literals in script/wasm/import loading paths — bases must derive from
+  `document.currentScript.src` with `''` (not a URL) as the failure value; (2) the extension
+  shell pre-injects dependencies (audit.js before loader.js, tracker-inline.js before
+  scraper.js) so the tools' dynamic loaders short-circuit on their window-API guards;
+  (3) plain page links (`window.open` to the PWA, wa.me) and same-origin data fetches
+  (l.php letters) are fine — the ban is on remote *code*, not remote data or navigation.
+  Store zip = extension files only, built with:
   `zip -r dipi-tools-<version>.zip manifest.json extension-fab.js scraper.js tracker-inline.js course-audit/loader.js course-audit/audit.js photo-review/review.js vendor/mediapipe icons`
   Each store release: bump `"version"` in manifest.json, rebuild zip, upload in the dev
   console (re-review takes hours-days). Store listing screenshots must never contain real

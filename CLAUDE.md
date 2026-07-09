@@ -3,8 +3,9 @@
 Personal browser tooling for Dhamma Sudha Vipassana centre (centre 63 on dipi.vridhamma.org):
 a call-confirmation tracker plus a pre-course data-quality audit. Vanilla JS, no build step,
 no tests, no dependencies except one: photo-review uses MediaPipe tasks-vision (pinned,
-on-device WASM) for face detection — self-hosted under `vendor/mediapipe/` with the CDN as
-fallback. Deployed by pushing to `main` — GitHub Pages serves the repo at
+on-device WASM) for face detection — self-hosted under `vendor/mediapipe/` only, no CDN
+(MV3/Web Store forbids remote code; never add remote script/wasm URLs to files shipped in
+the extension zip). Deployed by pushing to `main` — GitHub Pages serves the repo at
 `https://kapaggar.github.io/callconfirm/`.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
