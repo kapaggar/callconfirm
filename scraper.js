@@ -15,11 +15,15 @@
   // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
   // wins, else derive from this script's own URL (works for github.io AND the
   // chrome-extension:// copy — must run synchronously; currentScript is null
-  // later). PWA stays github.io: "Open in PWA" opens the hosted app in a tab
-  // (a navigation link — not remote code).
+  // later). No hardcoded URLs anywhere in this file (Web Store remote-code
+  // policy). PWA = where the hosted web app lives: the global if set, else
+  // SELF_BASE when it's a real web origin. From the extension SELF_BASE is
+  // chrome-extension:// (index.html isn't packaged), so PWA is '' and the
+  // "Open in PWA" button is not rendered.
   var SELF_BASE = (document.currentScript && document.currentScript.src)
     ? new URL('.', document.currentScript.src).href.replace(/\/+$/, '') : null;
-  var PWA = window._DIPI_PWA_URL || 'https://kapaggar.github.io/callconfirm';
+  var PWA = window._DIPI_PWA_URL ||
+    ((SELF_BASE && SELF_BASE.indexOf('http') === 0) ? SELF_BASE : '');
   // No hardcoded fallback URL here: MV3 forbids remotely hosted code, and the
   // Web Store rejected the package for exactly that (a remote literal next to
   // script injection). Every load path provides a base — bookmarklet/userscript/
@@ -304,7 +308,7 @@
       bdg('NF', g.NF, '#a855f7') + bdg('OF', g.OF, '#d946ef') + bdg('SF', g.SF, '#ec4899') +
       '</div>' +
       B('_ds-inline', '#3b82f6', primaryLabel) +
-      B('_ds-t',      '#475569', '\u{1F4F1} Open in PWA (github.io)') +
+      (PWA ? B('_ds-t', '#475569', '\u{1F4F1} Open in PWA') : '') +
       B('_ds-cp',     '#16a34a', '\u{1F4CB} Copy Data') +
       B('_ds-csv',    '#9333ea', '\u{1F4CA} Download CSV') +
       B('_ds-aid',    '#ea580c', '\u{1F4E4} Export AID:Phone (for script)') +
@@ -323,8 +327,9 @@
       });
     };
 
-    // SECONDARY: PWA route (original v6 behaviour)
-    document.getElementById('_ds-t').onclick = function () {
+    // SECONDARY: PWA route (original v6 behaviour); button absent when no web base
+    var pwaBtn = document.getElementById('_ds-t');
+    if (pwaBtn) pwaBtn.onclick = function () {
       var data = { apps: apps, title: cleanTitle, dates: dates, courseType: courseType };
       var enc = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
       window.open(PWA + '/index.html#dipi=' + enc, '_blank');
