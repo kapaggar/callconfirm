@@ -414,7 +414,7 @@
   const hasFaceDetector = ('FaceDetector' in window);
   // Self-hosted MediaPipe only (repo vendor/mediapipe/, version + hashes in its
   // README): the base derives from this script's own URL, so the same file
-  // works from github.io and from the chrome-extension:// copy. Must run
+  // works from the web-hosted copy and the chrome-extension:// copy. Must run
   // synchronously at load — document.currentScript is null in callbacks.
   // Deliberately NO CDN fallback: MV3 forbids remotely hosted code and the Web
   // Store rejects packages containing remote script/wasm URLs ("Blue Argon").

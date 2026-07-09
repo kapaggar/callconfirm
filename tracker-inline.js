@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // DIPI Inline Call Tracker
 // Renders the calling dashboard as a full-screen overlay on
-// dipi.vridhamma.org instead of navigating to the github.io PWA.
+// dipi.vridhamma.org instead of navigating to the hosted PWA.
 //
 // API:
 //   window.DipiTracker.open()                  — show last session
