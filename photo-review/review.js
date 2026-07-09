@@ -412,50 +412,33 @@
   // returns boxes without landmarks and detects sideways faces at rot 0, so
   // orientation there rests on the weaker area heuristics.
   const hasFaceDetector = ('FaceDetector' in window);
-  const MP_VERSION = '0.10.14'; // pinned — bump deliberately, never "latest"
-  // Self-hosted assets first (repo vendor/mediapipe/, hashes in its README):
-  // derive the base from this script's own URL, so the same file works from
-  // github.io and from the chrome-extension:// copy. Must run synchronously at
-  // load — document.currentScript is null in callbacks. Pinned CDN URLs remain
-  // as fallback for partial deploys / stale checkouts.
+  // Self-hosted MediaPipe only (repo vendor/mediapipe/, version + hashes in its
+  // README): the base derives from this script's own URL, so the same file
+  // works from github.io and from the chrome-extension:// copy. Must run
+  // synchronously at load — document.currentScript is null in callbacks.
+  // Deliberately NO CDN fallback: MV3 forbids remotely hosted code and the Web
+  // Store rejects packages containing remote script/wasm URLs ("Blue Argon").
   const MP_SELF = (() => {
     const cs = document.currentScript;
     return (cs && cs.src) ? new URL('../vendor/mediapipe/', cs.src).href : null;
   })();
-  const MP_LOCAL = MP_SELF && {
-    bundle: MP_SELF + 'vision_bundle.mjs',
-    wasm: MP_SELF + 'wasm',
-    model: MP_SELF + 'blaze_face_short_range.tflite',
-  };
-  const MP_CDN = {
-    bundle: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/vision_bundle.mjs',
-    wasm: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION + '/wasm',
-    model: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
-  };
   let mpDetector = null, mpTried = false;
-  async function mpFrom(src) {
-    const vision = await import(src.bundle);
-    const files = await vision.FilesetResolver.forVisionTasks(src.wasm);
-    return vision.FaceDetector.createFromOptions(files, {
-      baseOptions: { modelAssetPath: src.model },
-      runningMode: 'IMAGE',
-      minDetectionConfidence: 0.5,
-    });
-  }
-  // Chrome Web Store policy (MV3): never fetch/execute remote code from the
-  // extension. When this file was loaded from chrome-extension:// the CDN
-  // fallback is excluded entirely — extension installs are fully self-hosted.
-  // The CDN list only applies to the github.io / bookmarklet distribution.
-  const MP_IS_EXT = !!(MP_SELF && MP_SELF.indexOf('chrome-extension:') === 0);
   async function getMpDetector() {
     if (mpDetector || mpTried) return mpDetector;
     mpTried = true;
-    for (const src of (MP_IS_EXT ? [MP_LOCAL] : [MP_LOCAL, MP_CDN])) {
-      if (!src) continue;
-      try { mpDetector = await mpFrom(src); break; }
-      catch (e) { mpDetector = null; } // missing vendor files / CDN blocked → next source
+    if (!MP_SELF) return null; // inline-eval'd (never in practice) → native fallback
+    try {
+      const vision = await import(MP_SELF + 'vision_bundle.mjs');
+      const files = await vision.FilesetResolver.forVisionTasks(MP_SELF + 'wasm');
+      mpDetector = await vision.FaceDetector.createFromOptions(files, {
+        baseOptions: { modelAssetPath: MP_SELF + 'blaze_face_short_range.tflite' },
+        runningMode: 'IMAGE',
+        minDetectionConfidence: 0.5,
+      });
+    } catch (e) {
+      mpDetector = null; // vendor assets missing/unreachable → native FaceDetector fallback
     }
-    return mpDetector; // null → native FaceDetector fallback
+    return mpDetector;
   }
 
   // MediaPipe keypoint order: 0 right eye, 1 left eye, 2 nose tip, 3 mouth,

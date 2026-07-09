@@ -25,18 +25,25 @@
     return v === null ? AUTORUN[t].def : v === 'true';
   }
 
-  function inject(path) {
+  function inject(path, onload) {
     var s = document.createElement('script');
     s.src = chrome.runtime.getURL(path) + '?v=' + Date.now();
+    if (onload) s.onload = onload;
     s.onerror = function () { console.error('[dipi-ext] failed to load', s.src); };
     (document.head || document.documentElement).appendChild(s);
   }
 
-  var injectAudit = function () { inject('course-audit/loader.js'); };
+  // Dependencies are pre-injected (audit.js before loader.js, tracker-inline.js
+  // before scraper.js) so the tools' own dynamic script loaders short-circuit
+  // on their window.CourseAudit / window.DipiTracker guards — under MV3 the
+  // extension must never reach a runtime script fetch it doesn't bundle.
+  var injectAudit = function () {
+    inject('course-audit/audit.js', function () { inject('course-audit/loader.js'); });
+  };
   var injectScraper = function () {
     var old = document.getElementById('_ds');
     if (old) old.remove();
-    inject('scraper.js'); // derives TRACKER_BASE from its own script src
+    inject('tracker-inline.js', function () { inject('scraper.js'); }); // scraper derives TRACKER_BASE from its own src
   };
   var injectPhotos = function () { inject('photo-review/review.js'); }; // self-guards + re-opens
 

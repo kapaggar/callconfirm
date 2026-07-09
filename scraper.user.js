@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DIPI Call Tracker
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.2.0
+// @version      1.2.1
 // @description  Scrape applicants from dipi.vridhamma.org and run an inline call tracker. Adds a floating button to /search-course/ and /centre/ pages.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*

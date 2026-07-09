@@ -15,12 +15,18 @@
   // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
   // wins, else derive from this script's own URL (works for github.io AND the
   // chrome-extension:// copy — must run synchronously; currentScript is null
-  // later), else the github.io default. PWA stays github.io: "Open in PWA"
-  // should open the hosted app, never a chrome-extension URL.
+  // later). PWA stays github.io: "Open in PWA" opens the hosted app in a tab
+  // (a navigation link — not remote code).
   var SELF_BASE = (document.currentScript && document.currentScript.src)
     ? new URL('.', document.currentScript.src).href.replace(/\/+$/, '') : null;
   var PWA = window._DIPI_PWA_URL || 'https://kapaggar.github.io/callconfirm';
-  var TRACKER_BASE = window._DIPI_TRACKER_BASE || SELF_BASE || 'https://kapaggar.github.io/callconfirm';
+  // No hardcoded fallback URL here: MV3 forbids remotely hosted code, and the
+  // Web Store rejected the package for exactly that (a remote literal next to
+  // script injection). Every load path provides a base — bookmarklet/userscript/
+  // launcher set the global, and script-src loading (github.io or extension)
+  // yields SELF_BASE. The extension also pre-injects tracker-inline.js, so
+  // loadInlineTracker() short-circuits there.
+  var TRACKER_BASE = window._DIPI_TRACKER_BASE || SELF_BASE || '';
 
   // Expose API for re-scrape from inline tracker
   window.DipiScraper = { run: runScraper, pick: pickCourse };

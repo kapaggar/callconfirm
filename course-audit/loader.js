@@ -20,7 +20,11 @@
   const SCRIPT_BASE = (function () {
     const cs = document.currentScript;
     if (cs && cs.src) return new URL('.', cs.src).toString();
-    return 'https://kapaggar.github.io/callconfirm/course-audit/';
+    // No remote fallback URL: MV3 forbids remotely hosted code (Web Store
+    // rejection "Blue Argon"). Every load path injects this file via
+    // <script src>, so currentScript.src is always set; the extension also
+    // pre-injects audit.js, making the dynamic load below a no-op there.
+    return '';
   })();
 
   if (!window.CourseAudit) {
