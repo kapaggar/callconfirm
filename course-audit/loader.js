@@ -1,5 +1,4 @@
 // loader.js - GitHub Pages entry point for dipi.vridhamma.org course audit
-// Hosted at: https://kapaggar.github.io/callconfirm/course-audit/loader.js
 //
 // New in this revision:
 //   - "Send to WhatsApp" button with recipient management

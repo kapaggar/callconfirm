@@ -5,7 +5,7 @@
 // so flags and all tool data are shared with the userscript/bookmarklet paths).
 //
 // Tools are injected as <script src=chrome.runtime.getURL(...)> tags, so they
-// execute in the page's MAIN world exactly as the github.io-loaded copies do —
+// execute in the page's MAIN world exactly as the web-hosted copies do —
 // same window.jQuery/DataTables access, same dipi-origin localStorage/IndexedDB
 // (zero storage migration). All files are bundled; nothing loads remotely.
 // The ?v=Date.now() suffix is kept for symmetry with the other paths but is

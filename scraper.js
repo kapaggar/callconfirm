@@ -2,7 +2,7 @@
 // DIPI Scraper v7
 // - Same DataTables scraping logic as v6
 // - Primary action: load the inline tracker on the dipi page (no nav)
-// - Secondary: open in github.io PWA (original v6 behavior)
+// - Secondary: open in the hosted PWA (original v6 behavior)
 // - Exposes window.DipiScraper.run() for the inline tracker's Re-scrape
 // ═══════════════════════════════════════════════════════════════
 (function () {
@@ -13,7 +13,7 @@
   var SEARCH_BASE = '/search-course/' + CID + '/';
   var STATUS_FILTER = 'Expected,Confirmed';
   // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
-  // wins, else derive from this script's own URL (works for github.io AND the
+  // wins, else derive from this script's own URL (works for the web-hosted AND the
   // chrome-extension:// copy — must run synchronously; currentScript is null
   // later). No hardcoded URLs anywhere in this file (Web Store remote-code
   // policy). PWA = where the hosted web app lives: the global if set, else
@@ -27,7 +27,7 @@
   // No hardcoded fallback URL here: MV3 forbids remotely hosted code, and the
   // Web Store rejected the package for exactly that (a remote literal next to
   // script injection). Every load path provides a base — bookmarklet/userscript/
-  // launcher set the global, and script-src loading (github.io or extension)
+  // launcher set the global, and script-src loading (web or extension)
   // yields SELF_BASE. The extension also pre-injects tracker-inline.js, so
   // loadInlineTracker() short-circuits there.
   var TRACKER_BASE = window._DIPI_TRACKER_BASE || SELF_BASE || '';
