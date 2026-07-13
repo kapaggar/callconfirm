@@ -257,7 +257,7 @@ The earlier "Open Tracker" FAB (order 5) was removed in v1.1.0 — it tried to r
 
 Each button: 140px min-width, 10px×14px padding, 13px font, 6px radius, drop shadow. Wrapper uses `pointer-events:none`, buttons use `pointer-events:auto` so gaps don't block underlying page clicks.
 
-Right-click on Scrape/Audit toggles auto-run via localStorage (`dipiTracker.autorun`, `courseAudit.autorun`).
+Right-click on Scrape/Audit toggles auto-run via localStorage (`dipiTracker.autorun`, `courseAudit.autorun`). All tools (scrape, audit, photos) default to auto-run OFF — they run only when their FAB is clicked; auto-run is opt-in per tool.
 
 ---
 

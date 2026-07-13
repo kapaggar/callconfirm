@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         dipi.vridhamma.org Course Audit
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.1.2
-// @description  Auto-runs course audit overlay on dipi.vridhamma.org applicants pages. Adds a floating Re-run button. Toggleable via localStorage.courseAudit.autorun.
+// @version      1.2.0
+// @description  Course audit overlay for dipi.vridhamma.org applicants pages. Adds a floating ↻ Audit button; runs on click (auto-run opt-in via localStorage.courseAudit.autorun).
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
 // @match        https://*.vridhamma.org/search-course/*
@@ -90,22 +90,21 @@
     btn.onclick = () => injectLoader();
     btn.oncontextmenu = (e) => {
       e.preventDefault();
-      const cur = localStorage.getItem(AUTORUN_KEY);
-      const newVal = (cur === 'false') ? 'true' : 'false';
+      const newVal = shouldAutoRun() ? 'false' : 'true';
       localStorage.setItem(AUTORUN_KEY, newVal);
       btn.style.opacity = (newVal === 'true') ? '1' : '0.55';
       btn.title = `Re-run audit (auto-run: ${newVal})`;
     };
-    if (localStorage.getItem(AUTORUN_KEY) === 'false') {
+    if (!shouldAutoRun()) {
       btn.style.opacity = '0.55';
       btn.title = 'Re-run audit (auto-run: false)';
     }
     appendFab(btn, 10); // order: 10 (between Open Tracker=5 and Scrape=20)
   }
 
+  // Click-to-run by default; auto-run is opt-in (right-click the FAB).
   function shouldAutoRun() {
-    const v = localStorage.getItem(AUTORUN_KEY);
-    return v === null || v === 'true';
+    return localStorage.getItem(AUTORUN_KEY) === 'true';
   }
 
   // ---------- Run ----------

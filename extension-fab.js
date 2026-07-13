@@ -15,9 +15,11 @@
 
   var isSearch = location.pathname.indexOf('/search-course/') > -1;
 
+  // All tools default to click-to-run; auto-run is opt-in per tool
+  // (right-click a FAB to toggle, persisted in localStorage).
   var AUTORUN = {
-    scrape: { key: 'dipiTracker.autorun', def: true },
-    audit:  { key: 'courseAudit.autorun', def: true },
+    scrape: { key: 'dipiTracker.autorun', def: false },
+    audit:  { key: 'courseAudit.autorun', def: false },
     photos: { key: 'photoReview.autorun', def: false },
   };
   function autorunOn(t) {
