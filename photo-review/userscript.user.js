@@ -94,7 +94,7 @@
     appendFab(btn, 30); // FAB order: Audit 10, Scrape 20, Photos 30
   }
 
-  // Image loading is heavy, so unlike audit/scraper this defaults to OFF.
+  // Like audit/scraper, defaults to OFF — auto-run is opt-in per tool.
   function shouldAutoRun() {
     return localStorage.getItem(AUTORUN_KEY) === 'true';
   }

@@ -145,9 +145,9 @@ $('#table-applicants').DataTable().rows().data().toArray()
 4. `audit.js` and `loader.js` cache-busted via `?v=Date.now()` — picked up on next run.
 5. `userscript.user.js` checked daily by Tampermonkey or on-demand via Tampermonkey dashboard.
 
-## Disabling auto-run
+## Auto-run (opt-in)
 
-Right-click the `↻ Audit` floating button. The button turns gray and `localStorage.courseAudit.autorun` is set to `'false'`. Right-click again to re-enable, or click the button to run once on the current page.
+Auto-run is off by default — the audit only runs when you click the `↻ Audit` floating button. To make it run automatically on page load, right-click the button (`localStorage.courseAudit.autorun` is set to `'true'` and the button turns fully opaque). Right-click again to turn it back off.
 
 ## Verified against your data
 
