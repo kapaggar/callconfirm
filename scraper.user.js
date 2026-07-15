@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DIPI Call Tracker
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.3.0
+// @version      1.3.1
 // @description  Scrape applicants from dipi.vridhamma.org and run an inline call tracker. Adds a floating button to /search-course/ and /centre/ pages.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
@@ -92,7 +92,7 @@
     primary.id = 'dipi-tracker-fab-primary';
     primary.textContent = primaryLabel;
     primary.title = 'Run DIPI scraper (right-click to toggle auto-run)';
-    primary.style.cssText = btnStyle('#3b82f6');
+    primary.style.cssText = btnStyle();
     primary.onclick = injectScraper;
     primary.oncontextmenu = function (e) {
       e.preventDefault();
@@ -107,9 +107,11 @@
     appendFab(primary, 20);
   }
 
-  function btnStyle(bg) {
+  // Shared neutral FAB style (keep in sync across the shells)
+  function btnStyle() {
     return [
-      'padding:10px 14px', 'background:' + bg, 'color:#fff', 'border:0',
+      'padding:10px 14px', 'background:rgba(30,41,59,.92)', 'color:#cbd5e1',
+      'border:1px solid #475569',
       'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       'font-size:13px', 'font-weight:600',
       'box-shadow:0 2px 8px rgba(0,0,0,.3)', 'min-width:140px', 'text-align:center'

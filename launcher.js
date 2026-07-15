@@ -49,14 +49,15 @@
     });
     kids.forEach(function (k) { stack.appendChild(k); });
   }
-  function makeBtn(id, text, title, bg, order, onClick) {
+  function makeBtn(id, text, title, order, onClick) {
     if (document.getElementById(id)) return;
     var btn = document.createElement('button');
     btn.id = id;
     btn.textContent = text;
     btn.title = title;
     btn.style.cssText = [
-      'padding:10px 14px', 'background:' + bg, 'color:#fff', 'border:0',
+      'padding:10px 14px', 'background:rgba(30,41,59,.92)', 'color:#cbd5e1',
+      'border:1px solid #475569',
       'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       "font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       'font-weight:600', 'box-shadow:0 2px 8px rgba(0,0,0,.3)',
@@ -68,17 +69,17 @@
 
   function ensure() {
     // FAB order convention: Audit 10, Scrape 20, Photos 30
-    makeBtn('dl-audit-btn', '🔍 Audit', 'Run the pre-course data-quality audit', '#06c', 10, function () {
+    makeBtn('dl-audit-btn', '🔍 Audit', 'Run the pre-course data-quality audit', 10, function () {
       inject('/course-audit/loader.js'); // loader tears down a previous panel itself
     });
-    makeBtn('dl-scrape-btn', '📥 Scrape', 'Scrape applicants / open the call tracker', '#3b82f6', 20, function () {
+    makeBtn('dl-scrape-btn', '📥 Scrape', 'Scrape applicants / open the call tracker', 20, function () {
       var old = document.getElementById('_ds');
       if (old) old.remove();
       window._DIPI_PWA_URL = BASE;
       window._DIPI_TRACKER_BASE = BASE;
       inject('/scraper.js');
     });
-    makeBtn('dl-photos-btn', '📷 Photos', 'Review / correct applicant photos', '#0d9488', 30, function () {
+    makeBtn('dl-photos-btn', '📷 Photos', 'Review / correct applicant photos', 30, function () {
       if (window.DipiPhotoReview) { window.DipiPhotoReview.open(); return; }
       inject('/photo-review/review.js');
     });

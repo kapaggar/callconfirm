@@ -17,12 +17,12 @@
 
   const STATUSES = {
     pending:      { label: 'Pending',    icon: '⏳', color: '#94a3b8', bg: '#f1f5f9' },
-    confirmed:    { label: 'Confirmed',  icon: '✅', color: '#16a34a', bg: '#f0fdf4' },
-    cancelled:    { label: 'Cancelled',  icon: '❌', color: '#dc2626', bg: '#fef2f2' },
-    no_answer:    { label: 'No Answer',  icon: '📵', color: '#ea580c', bg: '#fff7ed' },
-    callback:     { label: 'Callback',   icon: '🔄', color: '#2563eb', bg: '#eff6ff' },
-    tentative:    { label: 'Tentative',  icon: '🤔', color: '#9333ea', bg: '#faf5ff' },
-    left_message: { label: 'Left Msg',   icon: '💬', color: '#0891b2', bg: '#ecfeff' },
+    confirmed:    { label: 'Confirmed',  icon: '✅', color: '#3d8b62', bg: '#f0f6f2' },
+    cancelled:    { label: 'Cancelled',  icon: '❌', color: '#b35f5f', bg: '#f8f0f0' },
+    no_answer:    { label: 'No Answer',  icon: '📵', color: '#b07a4d', bg: '#f8f3ed' },
+    callback:     { label: 'Callback',   icon: '🔄', color: '#4a72ad', bg: '#eff3f8' },
+    tentative:    { label: 'Tentative',  icon: '🤔', color: '#7d639c', bg: '#f4f1f8' },
+    left_message: { label: 'Left Msg',   icon: '💬', color: '#4a8298', bg: '#eff5f7' },
   };
 
   const DB_NAME = 'vcall_inline';
@@ -426,14 +426,14 @@
       #${OVERLAY_ID} .dt-header h1 { font-size:15px; font-weight:700; line-height:1.2; margin:0; }
       #${OVERLAY_ID} .dt-header .sub { font-size:11px; color:#94a3b8; margin-top:2px; }
       #${OVERLAY_ID} .dt-header-btns { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
-      #${OVERLAY_ID} .dt-btn { border:none; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600; cursor:pointer; }
-      #${OVERLAY_ID} .dt-btn-blue { background:#3b82f6; color:#fff; }
-      #${OVERLAY_ID} .dt-btn-gray { background:#475569; color:#fff; }
-      #${OVERLAY_ID} .dt-btn-red  { background:#dc2626; color:#fff; }
+      #${OVERLAY_ID} .dt-btn { border:1px solid transparent; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+      #${OVERLAY_ID} .dt-btn-blue { background:#3f65a7; color:#fff; }
+      #${OVERLAY_ID} .dt-btn-gray { background:rgba(148,163,184,.12); border-color:#475569; color:#cbd5e1; }
+      #${OVERLAY_ID} .dt-btn-red  { background:transparent; border-color:#5f4444; color:#cf8d8d; }
       #${OVERLAY_ID} .dt-stats { display:flex; gap:6px; margin-top:10px; overflow-x:auto; padding-bottom:2px; }
       #${OVERLAY_ID} .dt-pill { padding:4px 10px; border-radius:20px; border:none; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; }
-      #${OVERLAY_ID} .dt-pill.active { background:#fff; color:#1e293b; }
-      #${OVERLAY_ID} .dt-pill:not(.active) { background:rgba(255,255,255,.1); color:#94a3b8; }
+      #${OVERLAY_ID} .dt-pill.active { background:rgba(255,255,255,.18); color:#e8edf3; }
+      #${OVERLAY_ID} .dt-pill:not(.active) { background:rgba(255,255,255,.06); color:#94a3b8; }
       #${OVERLAY_ID} .dt-search { margin-top:8px; }
       #${OVERLAY_ID} .dt-search input { width:100%; padding:8px 12px; border-radius:8px; border:none; background:#475569; color:#fff; font-size:13px; outline:none; }
       #${OVERLAY_ID} .dt-search input::placeholder { color:#94a3b8; }
@@ -460,7 +460,7 @@
       #${OVERLAY_ID} .dt-dipi-label b { color:#1e293b; }
       #${OVERLAY_ID} .dt-dipi-sel { font-size:12px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1e293b; max-width:160px; }
       #${OVERLAY_ID} .dt-dipi-custom { font-size:12px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; width:120px; }
-      #${OVERLAY_ID} .dt-dipi-update { font-size:12px; font-weight:600; padding:4px 12px; border-radius:6px; border:none; background:#3b82f6; color:#fff; cursor:pointer; }
+      #${OVERLAY_ID} .dt-dipi-update { font-size:12px; font-weight:600; padding:4px 12px; border-radius:6px; border:none; background:#3f65a7; color:#fff; cursor:pointer; }
       #${OVERLAY_ID} .dt-dipi-update:disabled { background:#94a3b8; cursor:not-allowed; }
       #${OVERLAY_ID} .dt-dipi-edit { font-size:14px; text-decoration:none; padding:2px 6px; }
       #${OVERLAY_ID} .dt-status-btn { padding:9px 6px; border-radius:8px; cursor:pointer; font-size:11px; font-weight:600; line-height:1.2; text-align:center; }

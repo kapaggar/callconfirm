@@ -92,9 +92,11 @@
     });
     kids.forEach(function (k) { stack.appendChild(k); });
   }
-  function btnStyle(bg) {
+  // One neutral style for all FABs (muted slate, single border accent)
+  function btnStyle() {
     return [
-      'padding:10px 14px', 'background:' + bg, 'color:#fff', 'border:0',
+      'padding:10px 14px', 'background:rgba(30,41,59,.92)', 'color:#cbd5e1',
+      'border:1px solid #475569',
       'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       "font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       'font-weight:600', 'box-shadow:0 2px 8px rgba(0,0,0,.3)',
@@ -110,7 +112,7 @@
     btn.id = opts.id;
     btn.textContent = opts.text;
     btn.title = opts.title + ' (right-click to toggle auto-run)';
-    btn.style.cssText = btnStyle(opts.bg);
+    btn.style.cssText = btnStyle();
     btn.onclick = opts.onClick;
     btn.oncontextmenu = function (e) {
       e.preventDefault();
@@ -129,20 +131,20 @@
   if (isSearch) {
     makeBtn({
       id: 'ca-rerun-btn', launcherId: 'dl-audit-btn', tool: 'audit',
-      text: '↻ Audit', title: 'Re-run course audit', bg: '#06c', order: 10,
+      text: '↻ Audit', title: 'Re-run course audit', order: 10,
       onClick: injectAudit,
     });
   }
   makeBtn({
     id: 'dipi-tracker-fab-primary', launcherId: 'dl-scrape-btn', tool: 'scrape',
     text: isSearch ? '🔄 Scrape' : '🧘 Pick Course', title: 'Run DIPI scraper',
-    bg: '#3b82f6', order: 20,
+    order: 20,
     onClick: injectScraper,
   });
   if (isSearch) {
     makeBtn({
       id: 'pr-fab-btn', launcherId: 'dl-photos-btn', tool: 'photos',
-      text: '📷 Photos', title: 'Review applicant photos', bg: '#0d9488', order: 30,
+      text: '📷 Photos', title: 'Review applicant photos', order: 30,
       onClick: function () { waitForDataTable(4000).then(injectPhotos).catch(injectPhotos); },
     });
   }
