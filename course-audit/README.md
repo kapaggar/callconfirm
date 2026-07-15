@@ -38,6 +38,8 @@ Default layout: split-view. Page shrinks to 60vw on the left, audit iframe occup
 
 Section headers (Hard errors / Safety / Cross-course / Soft) render at 16px bold with color coding (red/amber/blue/gray). Rows are 12px.
 
+A checkbox above the findings — "Also scan for PAN card presence" — controls the `pan_missing` hard error. Unchecked (default), ID-presence scanning covers Aadhar only; check it to also flag applicants without a PAN (needed for donation receipts). PANs that ARE present are always validated (format, Aadhar-in-PAN-slot mismatch) regardless of the checkbox. Preference saved in `localStorage.courseAudit.checkPan`.
+
 ## Action buttons in the panel
 
 | Button | Behavior |

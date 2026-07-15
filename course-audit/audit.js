@@ -232,9 +232,10 @@
       }
     });
 
-    // 5c. PAN required for donation receipts (Indian tax dept mandate).
-    //     - Flag if PAN is missing entirely
-    //     - Flag if PAN is present but doesn't match Indian PAN format
+    // 5c. PAN checks for donation receipts (Indian tax dept mandate).
+    //     - pan_missing only fires when opts.checkPanPresence is true (opt-in
+    //       via the panel checkbox; default ID-presence scanning is Aadhar only)
+    //     - Validity checks on a present PAN always run
     //     - Foreign nationals (Country != India and != blank) are exempt
     const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
     active.forEach(d => {
@@ -256,7 +257,7 @@
       if (!pan && PAN_RE.test(idNo.replace(/\s+/g, ''))) pan = idNo;
 
       if (!pan) {
-        push(H, 'pan_missing', d, {});
+        if (opts.checkPanPresence) push(H, 'pan_missing', d, {});
       } else if (/^\d{12}$/.test(pan.replace(/\s+/g, ''))) {
         // 12-digit number in the PAN slot — almost certainly an Aadhar
         push(H, 'id_type_mismatch', d, { value: pan, idType: 'Pan card', looksLike: 'Aadhar' });

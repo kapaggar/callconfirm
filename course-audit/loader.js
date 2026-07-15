@@ -160,13 +160,19 @@
   saveCache({ courseId, courseKey, courseLabel, ts: Date.now(), rows: mapped });
 
   // ---- 6. Run audit ----
-  const findings = window.CourseAudit.run(mapped, {
+  // PAN-presence scanning is opt-in (checkbox in the panel); Aadhar checks
+  // always run. Validity of a PAN that IS present is always audited.
+  const PAN_CHECK_KEY = 'courseAudit.checkPan';
+  const panCheckOn = () => localStorage.getItem(PAN_CHECK_KEY) === 'true';
+  const runAudit = () => window.CourseAudit.run(mapped, {
     courseStart,
     courseId,
     allCourses: loadCache().map(c => ({ courseId: c.courseId, rows: c.rows })),
     minAge: 18,
     maxAge: 95,
+    checkPanPresence: panCheckOn(),
   });
+  let findings = runAudit();
 
   // ---- 7. Noise filter (Send to Claude) ----
   const NOISE_EXACT = new Set([
@@ -646,6 +652,9 @@ ${sections.join('\n\n')}`;
         <button id="ca-close">×</button>
       </div>
     </div>
+    <label class="pan-toggle" title="Aadhar checks always run. When checked, applicants without a PAN are also flagged (needed for donation receipts).">
+      <input id="ca-pan-check" type="checkbox" ${panCheckOn() ? 'checked' : ''}> Also scan for PAN card presence (default scans Aadhar only)
+    </label>
     <details open><summary><span class="sec sec-red">Hard errors</span> <span class="cnt">(${findings.hardErrors.length})</span></summary>${renderList(findings.hardErrors)}</details>
     <details ${findings.safety.length?'open':''}><summary><span class="sec sec-amber">Safety</span> <span class="cnt">(${findings.safety.length})</span></summary>${renderList(findings.safety)}</details>
     <details ${findings.crossCourse.length?'open':''}><summary><span class="sec sec-blue">Cross-course</span> <span class="cnt">(${findings.crossCourse.length})</span></summary>${renderList(findings.crossCourse)}</details>
@@ -762,6 +771,8 @@ ${sections.join('\n\n')}`;
     .finding .check { color:#666; font-size:11px; }
     pre { margin:6px 0; padding:8px; background:#f6f6f6; border-radius:4px; font-size:11px; overflow:auto; }
     .cache { font-size:11px; color:#666; margin:6px 0; }
+    .pan-toggle { display:block; margin:0 0 8px; padding:6px 8px; background:#f2f6ff; border:1px solid #c9d8f0; border-radius:4px; font-size:12px; color:#333; cursor:pointer; user-select:none; }
+    .pan-toggle input { vertical-align:-2px; margin-right:4px; }
 
     /* WhatsApp modal */
     .wa-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2147483647; align-items:center; justify-content:center; }
@@ -900,6 +911,11 @@ ${sections.join('\n\n')}`;
     $('ca-mode').onclick = () => {
       mode = (mode === 'split') ? 'float' : 'split';
       localStorage.setItem(MODE_KEY, mode);
+      tearDown(); buildUI();
+    };
+    $('ca-pan-check').onchange = (e) => {
+      localStorage.setItem(PAN_CHECK_KEY, e.target.checked ? 'true' : 'false');
+      findings = runAudit();
       tearDown(); buildUI();
     };
     $('ca-export').onclick = () => {
