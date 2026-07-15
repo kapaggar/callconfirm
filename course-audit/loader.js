@@ -646,10 +646,9 @@ ${sections.join('\n\n')}`;
       <div class="hdr-right">
         <button id="ca-claude">For Teachers Review</button>
         <button id="ca-whatsapp" class="wa">Send to WhatsApp</button>
-        <button id="ca-export">Export JSON</button>
         <button id="ca-mode" title="Toggle layout">⇆ ${mode==='split'?'Float':'Split'}</button>
-        <button id="ca-clear-cache" title="Clear cross-course cache">Clear</button>
-        <button id="ca-close">×</button>
+        <button id="ca-clear-cache" title="Empty the cross-course duplicate cache (the stored rows from other courses used to detect people enrolled in more than one course). Does not touch dipi or this course; the panel closes and the cache is rebuilt on the next audit run.">Clear cache</button>
+        <button id="ca-close" title="Close this audit panel and restore the page to full width">✕ Close</button>
       </div>
     </div>
     <label class="pan-toggle" title="Aadhar checks always run. When checked, applicants without a PAN are also flagged (needed for donation receipts).">
@@ -917,13 +916,6 @@ ${sections.join('\n\n')}`;
       localStorage.setItem(PAN_CHECK_KEY, e.target.checked ? 'true' : 'false');
       findings = runAudit();
       tearDown(); buildUI();
-    };
-    $('ca-export').onclick = () => {
-      const blob = new Blob([JSON.stringify({ courseId, courseLabel, findings }, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `audit_${courseId}.json`;
-      a.click();
     };
     $('ca-claude').onclick = async () => {
       const { text, count } = buildClaudePrompt();

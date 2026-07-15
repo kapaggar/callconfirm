@@ -59,8 +59,7 @@ Updates: edit + push. The bookmarklet's `?v=` cache buster picks up the change o
 2. Wait for the DataTable to finish rendering.
 3. Click the bookmarklet.
 4. Overlay panel appears top-right with hard errors, safety flags, soft flags, cross-course duplicates, and sensitive-field counts.
-5. Click "Send to Claude" to copy a curated prompt (only the applicants with non-empty sensitive fields) for teacher-call judgment.
-6. Click "Export JSON" to download `audit_<courseId>.json` for offline review or Slack.
+5. Click "For Teachers Review" to copy a curated prompt (only the applicants with non-empty sensitive fields) for teacher-call judgment.
 
 ## Cross-course double-booking
 
@@ -72,11 +71,11 @@ Workflow for 4-5 upcoming courses:
 2. Open course 2 page → click bookmarklet → cross-course section will list anyone double-registered against course 1. Close.
 3. Repeat. Each successive run cross-checks against all previously cached courses.
 
-Clear with the "Clear" button in the panel, or in DevTools: `localStorage.removeItem('courseAudit.cache')`.
+Clear with the "Clear cache" button in the panel, or in DevTools: `localStorage.removeItem('courseAudit.cache')`.
 
 ## Privacy and security
 
-- All processing is local. Nothing leaves the browser unless you explicitly click "Send to Claude" (which copies to clipboard) or "Export JSON" (which saves to disk).
+- All processing is local. Nothing leaves the browser unless you explicitly click "For Teachers Review" (which copies to clipboard).
 - The cache lives in localStorage of `dipi.vridhamma.org`. If multiple admins share a machine, clear after use.
 - The bookmarklet runs with full page privileges (your cookies, your session). Don't run it on untrusted pages.
 - The "Send to Claude" prompt is filtered to only attendees with non-empty Physical Health / Mental Health / Medication / Pregnancy / Addiction / Other Info, so PII volume in the clipboard is minimized.
