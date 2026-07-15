@@ -60,8 +60,8 @@
     runScraper();
   } else if (isSearchPage) {
     setUI('<div style="text-align:center;padding:20px 0"><div style="font-size:20px;margin-bottom:4px">\u{1F9D8}</div><div style="font-size:15px;font-weight:700;margin-bottom:16px">DIPI Scraper</div>' +
-      B('_ds-go', '#3b82f6', '\u{1F504} Scrape This Page') +
-      B('_ds-pk', '#475569', '\u{1F4CB} Pick Different Course') +
+      B('_ds-go', '#3f65a7', '\u{1F504} Scrape This Page') +
+      B('_ds-pk', 'rgba(148,163,184,.12)', '\u{1F4CB} Pick Different Course', '#cbd5e1', '1px solid #475569') +
       B('_ds-x',  'transparent', '\u2715 Cancel', '#94a3b8', '1px solid #475569') + '</div>');
     document.getElementById('_ds-go').onclick = runScraper;
     document.getElementById('_ds-pk').onclick = pickCourse;
@@ -105,16 +105,17 @@
       var upcoming = upOrder.map(function (id) { return all.find(function (c) { return c.id === id; }); }).filter(Boolean);
       var others = all.filter(function (c) { return !c.up; });
       if (!all.length) {
-        setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u26A0\uFE0F</div><div>No courses found. Logged in?</div>' + B('_ds-x', '#475569', '\u2715 Close') + '</div>');
+        setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u26A0\uFE0F</div><div>No courses found. Logged in?</div>' + B('_ds-x', 'rgba(148,163,184,.12)', '\u2715 Close', '#cbd5e1', '1px solid #475569') + '</div>');
         document.getElementById('_ds-x').onclick = close; return;
       }
       var h = '<div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;margin-bottom:2px">\u{1F9D8}</div><div style="font-size:15px;font-weight:700">Select Course</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">Expected + Confirmed</div></div>';
       if (upcoming.length) {
-        h += '<div style="font-size:10px;font-weight:700;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">\u{1F4C5} Upcoming</div>';
+        h += '<div style="font-size:10px;font-weight:700;color:#8aa8cc;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">\u{1F4C5} Upcoming</div>';
         upcoming.forEach(function (c, i) {
           var cn = counts[c.id];
-          var bg = cn ? '<div style="display:flex;gap:6px;margin-top:4px"><span style="font-size:10px;background:#f59e0b22;color:#f59e0b;padding:2px 6px;border-radius:4px">Exp ' + cn.exp + '</span><span style="font-size:10px;background:#22c55e22;color:#22c55e;padding:2px 6px;border-radius:4px">Conf ' + cn.conf + '</span><span style="font-size:10px;background:#3b82f622;color:#3b82f6;padding:2px 6px;border-radius:4px">\u03A3 ' + (cn.exp + cn.conf) + '</span></div>' : '';
-          h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;background:' + (i === 0 ? '#1e3a5f' : '#1e293b') + ';border:' + (i === 0 ? '2px solid #3b82f6' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff"><div style="font-size:13px;font-weight:600;line-height:1.3">' + c.title + '</div>' + (i === 0 ? '<div style="font-size:9px;color:#60a5fa;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') + bg + '</button>';
+          var chip = 'font-size:10px;background:rgba(148,163,184,.14);color:#a8b3c2;padding:2px 6px;border-radius:4px';
+          var bg = cn ? '<div style="display:flex;gap:6px;margin-top:4px"><span style="' + chip + '">Exp ' + cn.exp + '</span><span style="' + chip + '">Conf ' + cn.conf + '</span><span style="' + chip + '">\u03A3 ' + (cn.exp + cn.conf) + '</span></div>' : '';
+          h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;background:' + (i === 0 ? '#24344c' : '#1e293b') + ';border:' + (i === 0 ? '1px solid #3f65a7' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff"><div style="font-size:13px;font-weight:600;line-height:1.3">' + c.title + '</div>' + (i === 0 ? '<div style="font-size:9px;color:#8aa8cc;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') + bg + '</button>';
         });
       }
       if (others.length) {
@@ -127,7 +128,7 @@
       document.querySelectorAll('._ds-c').forEach(function (b) { b.onclick = function () { goTo(this.dataset.id); }; });
       document.getElementById('_ds-x').onclick = close;
     }).catch(function (e) {
-      setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u274C</div><div>' + e.message + '</div>' + B('_ds-x', '#475569', '\u2715 Close') + '</div>');
+      setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u274C</div><div>' + e.message + '</div>' + B('_ds-x', 'rgba(148,163,184,.12)', '\u2715 Close', '#cbd5e1', '1px solid #475569') + '</div>');
       document.getElementById('_ds-x').onclick = close;
     });
   }
@@ -300,18 +301,18 @@
       '<div style="font-size:24px;margin-bottom:6px">\u2705</div>' +
       '<div style="font-size:17px;font-weight:700">' + apps.length + ' applicants scraped</div>' +
       '<div style="font-size:12px;color:#94a3b8;margin-top:2px">' + cleanTitle + '</div>' +
-      (dates ? '<div style="font-size:11px;color:#60a5fa;margin-top:2px">\u{1F4C5} ' + dates + '</div>' : '') +
+      (dates ? '<div style="font-size:11px;color:#8aa8cc;margin-top:2px">\u{1F4C5} ' + dates + '</div>' : '') +
       '<div style="font-size:10px;color:#64748b;margin-top:4px">AIDs captured: ' + withAid + '/' + apps.length + '</div>' +
       '<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:14px 0">' +
-      bdg('Exp', nExp, '#f59e0b') + bdg('Conf', nConf, '#22c55e') +
-      bdg('NM', g.NM, '#3b82f6') + bdg('OM', g.OM, '#0ea5e9') + bdg('SM', g.SM, '#06b6d4') +
-      bdg('NF', g.NF, '#a855f7') + bdg('OF', g.OF, '#d946ef') + bdg('SF', g.SF, '#ec4899') +
+      bdg('Exp', nExp) + bdg('Conf', nConf) +
+      bdg('NM', g.NM) + bdg('OM', g.OM) + bdg('SM', g.SM) +
+      bdg('NF', g.NF) + bdg('OF', g.OF) + bdg('SF', g.SF) +
       '</div>' +
-      B('_ds-inline', '#3b82f6', primaryLabel) +
-      (PWA ? B('_ds-t', '#475569', '\u{1F4F1} Open in PWA') : '') +
-      B('_ds-cp',     '#16a34a', '\u{1F4CB} Copy Data') +
-      B('_ds-csv',    '#9333ea', '\u{1F4CA} Download CSV') +
-      B('_ds-aid',    '#ea580c', '\u{1F4E4} Export AID:Phone (for script)') +
+      B('_ds-inline', '#3f65a7', primaryLabel) +
+      (PWA ? B('_ds-t', 'rgba(148,163,184,.12)', '\u{1F4F1} Open in PWA', '#cbd5e1', '1px solid #475569') : '') +
+      B('_ds-cp',     'rgba(148,163,184,.12)', '\u{1F4CB} Copy Data', '#cbd5e1', '1px solid #475569') +
+      B('_ds-csv',    'rgba(148,163,184,.12)', '\u{1F4CA} Download CSV', '#cbd5e1', '1px solid #475569') +
+      B('_ds-aid',    'rgba(148,163,184,.12)', '\u{1F4E4} Export AID:Phone (for script)', '#cbd5e1', '1px solid #475569') +
       B('_ds-x',      'transparent', '\u2715 Close', '#94a3b8', '1px solid #475569') +
       '</div>'
     );
@@ -358,8 +359,8 @@
     document.getElementById('_ds-x').onclick = close;
   }
 
-  function bdg(l, n, c) {
-    return n ? '<div style="background:' + c + '22;color:' + c + ';padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600">' + l + ' ' + n + '</div>' : '';
+  function bdg(l, n) {
+    return n ? '<div style="background:rgba(148,163,184,.14);color:#a8b3c2;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600">' + l + ' ' + n + '</div>' : '';
   }
 
   function loadInlineTracker(cb) {

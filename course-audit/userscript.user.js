@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dipi.vridhamma.org Course Audit
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.2.1
+// @version      1.2.2
 // @description  Course audit overlay for dipi.vridhamma.org applicants pages. Adds a floating ↻ Audit button; runs on click (auto-run opt-in via localStorage.courseAudit.autorun).
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
@@ -81,7 +81,8 @@
     btn.textContent = '↻ Audit';
     btn.title = 'Re-run course audit (right-click to toggle auto-run)';
     btn.style.cssText = [
-      'padding:10px 14px', 'background:#06c', 'color:#fff', 'border:0',
+      'padding:10px 14px', 'background:rgba(30,41,59,.92)', 'color:#cbd5e1',
+      'border:1px solid #475569',
       'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       "font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       'font-weight:600', 'box-shadow:0 2px 8px rgba(0,0,0,.3)',

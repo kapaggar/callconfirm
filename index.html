@@ -12,8 +12,8 @@
 <style>
   :root {
     --bg: #f1f5f9; --card: #fff; --text: #1e293b; --muted: #64748b; --light: #94a3b8;
-    --border: #e2e8f0; --header: #1e293b; --accent: #3b82f6;
-    --green: #16a34a; --red: #dc2626; --orange: #ea580c; --blue: #2563eb; --purple: #9333ea; --cyan: #0891b2;
+    --border: #e2e8f0; --header: #1e293b; --accent: #3f65a7;
+    --green: #3d8b62; --red: #b35f5f; --orange: #b07a4d; --blue: #4a72ad; --purple: #7d639c; --cyan: #4a8298;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
@@ -25,15 +25,15 @@
   .header h1 { font-size: 15px; font-weight: 700; line-height: 1.2; }
   .header .sub { font-size: 11px; color: var(--light); margin-top: 2px; }
   .header-btns { display: flex; gap: 8px; }
-  .btn { border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn { border: 1px solid transparent; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
   .btn-blue { background: var(--accent); color: #fff; }
-  .btn-gray { background: #475569; color: #fff; }
+  .btn-gray { background: rgba(148,163,184,.12); border-color: #475569; color: #cbd5e1; }
 
   /* Stats */
   .stats { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
   .pill { padding: 4px 10px; border-radius: 20px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
-  .pill.active { background: #fff; color: var(--text); }
-  .pill:not(.active) { background: rgba(255,255,255,.1); color: var(--light); }
+  .pill.active { background: rgba(255,255,255,.18); color: #e8edf3; }
+  .pill:not(.active) { background: rgba(255,255,255,.06); color: var(--light); }
 
   /* Search */
   .search { margin-top: 8px; }
@@ -90,12 +90,12 @@
 <script>
 const STATUSES = {
   pending:      { label:"Pending",    icon:"⏳", color:"#94a3b8", bg:"#f1f5f9" },
-  confirmed:    { label:"Confirmed",  icon:"✅", color:"#16a34a", bg:"#f0fdf4" },
-  cancelled:    { label:"Cancelled",  icon:"❌", color:"#dc2626", bg:"#fef2f2" },
-  no_answer:    { label:"No Answer",  icon:"📵", color:"#ea580c", bg:"#fff7ed" },
-  callback:     { label:"Callback",   icon:"🔄", color:"#2563eb", bg:"#eff6ff" },
-  tentative:    { label:"Tentative",  icon:"🤔", color:"#9333ea", bg:"#faf5ff" },
-  left_message: { label:"Left Msg",   icon:"💬", color:"#0891b2", bg:"#ecfeff" },
+  confirmed:    { label:"Confirmed",  icon:"✅", color:"#3d8b62", bg:"#f0f6f2" },
+  cancelled:    { label:"Cancelled",  icon:"❌", color:"#b35f5f", bg:"#f8f0f0" },
+  no_answer:    { label:"No Answer",  icon:"📵", color:"#b07a4d", bg:"#f8f3ed" },
+  callback:     { label:"Callback",   icon:"🔄", color:"#4a72ad", bg:"#eff3f8" },
+  tentative:    { label:"Tentative",  icon:"🤔", color:"#7d639c", bg:"#f4f1f8" },
+  left_message: { label:"Left Msg",   icon:"💬", color:"#4a8298", bg:"#eff5f7" },
 };
 const DB_NAME = "vcall";
 const DB_VER = 1;
@@ -501,7 +501,7 @@ function whatsappBulk() {
       const bar = document.createElement('div');
       bar.id = '_wa-next';
       bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999;background:#1e293b;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:center;box-shadow:0 -2px 12px rgba(0,0,0,.3)';
-      bar.innerHTML = '<span style="color:#94a3b8;font-size:12px">' + idx + '/' + pending.length + '</span><button id="_wa-go" style="background:#16a34a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">💬 Next: ' + (pending[idx] ? pending[idx].name.split(' ')[0] : 'Done') + '</button><button id="_wa-stop" style="background:#475569;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer">Stop</button>';
+      bar.innerHTML = '<span style="color:#94a3b8;font-size:12px">' + idx + '/' + pending.length + '</span><button id="_wa-go" style="background:#2e7d5b;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">💬 Next: ' + (pending[idx] ? pending[idx].name.split(' ')[0] : 'Done') + '</button><button id="_wa-stop" style="background:rgba(148,163,184,.12);color:#cbd5e1;border:1px solid #475569;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer">Stop</button>';
       var oldBar = document.getElementById('_wa-next');
       if (oldBar) oldBar.remove();
       document.body.appendChild(bar);
@@ -538,7 +538,7 @@ function render() {
       <div style="margin-top:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Import from DIPI</div>
         <button class="session-btn" id="pasteBtn" style="text-align:center;background:#eff6ff;border-color:#bfdbfe">
-          <div class="title" style="color:#2563eb">📋 Paste from DIPI</div>
+          <div class="title" style="color:#4a72ad">📋 Paste from DIPI</div>
           <div class="meta">Run bookmarklet on DIPI → Copy Data → Paste here</div>
         </button>
         <details style="font-size:11px;color:var(--muted);margin-top:4px">

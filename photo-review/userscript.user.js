@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dipi.vridhamma.org Photo Review
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.8.3
+// @version      1.8.4
 // @description  Review and correct applicant photos (rotate / crop) on dipi search-course pages. Local by default; explicit ⬆dipi write-back. Adds a 📷 Photos button to the shared FAB stack.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
@@ -75,7 +75,8 @@
     btn.textContent = '📷 Photos';
     btn.title = 'Review applicant photos (right-click to toggle auto-run)';
     btn.style.cssText = [
-      'padding:10px 14px', 'background:#0d9488', 'color:#fff', 'border:0',
+      'padding:10px 14px', 'background:rgba(30,41,59,.92)', 'color:#cbd5e1',
+      'border:1px solid #475569',
       'border-radius:6px', 'cursor:pointer', 'pointer-events:auto',
       "font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       'font-weight:600', 'box-shadow:0 2px 8px rgba(0,0,0,.3)',
