@@ -7,7 +7,7 @@ Browser tool that audits the applicants page at `https://dipi.vridhamma.org/sear
 | File | Role |
 |---|---|
 | `audit.js` | Pure rule engine. Framework-agnostic. Takes an array of attendee objects, returns findings. |
-| `loader.js` | Adapter for dipi.vridhamma.org. Renders the audit panel, handles Send to Claude / Send to WhatsApp / Export JSON. |
+| `loader.js` | Adapter for dipi.vridhamma.org. Renders the audit panel, handles For Teachers Review / Send to WhatsApp. |
 | `userscript.user.js` | Tampermonkey shell. Auto-injects `loader.js` on every dipi `/search-course/` page load. |
 | `bookmarklet.txt` | Manual one-click alternative to the userscript. |
 
@@ -44,12 +44,11 @@ A checkbox above the findings — "Also scan for PAN card presence" — controls
 
 | Button | Behavior |
 |---|---|
-| **Send to Claude** | Builds a noise-filtered prompt (~15–25 rows from a 200-row course), copies to clipboard. Paste into Claude.ai or Claude in Chrome. |
+| **For Teachers Review** | Builds a noise-filtered prompt (~15–25 rows from a 200-row course), copies to clipboard. Paste into Claude.ai or Claude in Chrome. |
 | **Send to WhatsApp** | Opens a recipient modal. Pick a saved recipient, a recent number, or type a new one. Opens WhatsApp Web/desktop pre-filled with a short summary. |
-| **Export JSON** | Downloads `audit_{courseId}.json` for offline review or sharing. |
 | **⇆ Float / Split** | Toggle layout. |
-| **Clear** | Wipes the cross-course cache in localStorage. |
-| **×** | Closes the panel. |
+| **Clear cache** | Wipes the cross-course duplicate cache in localStorage (rebuilt on the next audit run). Does not touch dipi or the current course. |
+| **✕ Close** | Closes the audit panel and restores the page to full width. |
 
 ## Send to Claude — noise filter
 
@@ -119,7 +118,7 @@ The WhatsApp summary intentionally contains only:
 - Sensitive field counts (numbers only)
 - A link back to the course page
 
-It does NOT contain Aadhar, DOB, mobile, email, or any free-text disclosures. For full detail, use Export JSON or Send to Claude.
+It does NOT contain Aadhar, DOB, mobile, email, or any free-text disclosures. For full detail, use For Teachers Review (copies a prompt to the clipboard).
 
 ## Cross-course double-booking
 
