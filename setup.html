@@ -29,8 +29,8 @@
 <p class="sub">One-time setup · Then one tap on DIPI for Audit · Scrape · Photos</p>
 
 <div class="card">
-  <span class="sn">1</span><h3>Your Call Tracker URL</h3>
-  <p>The GitHub Pages URL where the app is hosted:</p>
+  <span class="sn">1</span><h3>Your Tools URL</h3>
+  <p>The GitHub Pages base URL the bookmarklets load the tools from:</p>
   <input type="text" class="url-input" id="pwaUrl" value="https://kapaggar.github.io/callconfirm">
 </div>
 
@@ -70,7 +70,7 @@
     <span class="arrow">→</span> Pick a course → auto-navigates to search page<br><br>
     <strong>Tap 2:</strong> Tap bookmark again on the search page<br>
     <span class="arrow">→</span> Auto-scrapes all applicants + phone numbers<br>
-    <span class="arrow">→</span> Tap "Open Tracker" → app loads with all data<br><br>
+    <span class="arrow">→</span> Tap "Open Inline Call Tracker" → the dashboard opens right on the page<br><br>
     <em>That's it — start calling!</em>
   </div>
 </div>
@@ -86,7 +86,7 @@
 <div class="card" style="margin-top:16px;border-color:#e2e8f0">
   <details>
     <summary style="cursor:pointer;font-weight:600;font-size:13px;color:#64748b">⚙️ Advanced: Self-contained bookmarklet (fallback)</summary>
-    <p style="margin-top:8px;font-size:12px;color:#94a3b8">If the loader bookmarklet doesn't work (some sites block external scripts), use this larger self-contained version that has all the scraping logic built in.</p>
+    <p style="margin-top:8px;font-size:12px;color:#94a3b8">If the loader bookmarklet doesn't work (some sites block external scripts), use this larger self-contained version that has the scraping logic built in. It scrapes the search page and copies the applicant data to your clipboard (it can't open the on-page tracker, since that needs the external script too).</p>
     <button class="big-btn" style="background:#475569;font-size:13px;padding:10px" id="copyFallback">📋 Copy Fallback Bookmarklet</button>
     <div class="ok" id="okFallback" style="display:none">✅ Fallback copied!</div>
   </details>
@@ -98,16 +98,16 @@
 function buildAll() {
   var base = document.getElementById('pwaUrl').value.trim().replace(/\/+$/, '');
   if (!base) return '';
-  return "javascript:void(function(){var b='" + base + "';window._DIPI_PWA_URL=b;window._DIPI_TRACKER_BASE=b;var s=document.createElement('script');s.src=b+'/launcher.js?v='+Date.now();document.head.appendChild(s)}());";
+  return "javascript:void(function(){var b='" + base + "';window._DIPI_TRACKER_BASE=b;var s=document.createElement('script');s.src=b+'/launcher.js?v='+Date.now();document.head.appendChild(s)}());";
 }
 
 // Build the loader bookmarklet — tiny, fetches scraper.js from GitHub Pages
 function buildLoader() {
   var base = document.getElementById('pwaUrl').value.trim().replace(/\/+$/, '');
   if (!base) return '';
-  // The loader sets the PWA URL, then loads scraper.js
-  // Using script tag injection (no CORS needed unlike fetch)
-  return "javascript:void(window._DIPI_PWA_URL='" + base + "',function(){var s=document.createElement('script');s.src='" + base + "/scraper.js?v='+Date.now();document.head.appendChild(s)}())";
+  // Loads scraper.js via script-tag injection (no CORS needed unlike fetch);
+  // scraper.js derives its own base from its src, so no globals needed.
+  return "javascript:void(function(){var s=document.createElement('script');s.src='" + base + "/scraper.js?v='+Date.now();document.head.appendChild(s)}())";
 }
 
 // Build self-contained fallback bookmarklet
@@ -115,7 +115,7 @@ function buildFallback() {
   var base = document.getElementById('pwaUrl').value.trim().replace(/\/+$/, '');
   if (!base) return '';
   // This is a compressed version that does search-page scraping only
-  return "javascript:void((async function(){var P='" + base + "';var D=document,B=D.body;var bar=D.createElement('div');bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:%231e293b;color:%23fff;padding:14px 18px;font:14px -apple-system,sans-serif;text-align:center;box-shadow:0 2px 20px rgba(0,0,0,.5)';B.appendChild(bar);function msg(t){bar.textContent='\\u{1F9D8} '+t}function W(ms){return new Promise(function(r){setTimeout(r,ms)})}try{msg('Loading all entries...');var sel=D.querySelector('select[name$=\"_length\"]');if(sel){var f=0;for(var j=0;j<sel.options.length;j++){if(sel.options[j].value==='-1'){sel.value='-1';f=1;break}}if(!f){var o=D.createElement('option');o.value='-1';o.text='All';sel.appendChild(o);sel.value='-1'}sel.dispatchEvent(new Event('change'));await W(2500)}msg('Scanning...');var tbl=D.querySelector('table.dataTable')||D.querySelector('table');if(!tbl){msg('No table!');return}var trs=tbl.querySelector('tbody').querySelectorAll('tr'),rows=[];for(var k=0;k<trs.length;k++){var tr=trs[k];if(!tr.classList.contains('child')&&!tr.classList.contains('detail-row')&&tr.querySelector('td'))rows.push(tr)}msg('Found '+rows.length+'. Reading...');var apps=[];for(var i=0;i<rows.length;i++){var tr=rows[i];msg('Reading '+(i+1)+'/'+rows.length);var cells=tr.querySelectorAll('td'),nm='',st='',ty='',ag='';for(var c=0;c<cells.length;c++){var tx=cells[c].textContent.trim();if(tx.indexOf('(PDF)')>-1)nm=tx.replace('(PDF)','').replace(/\\s+/g,' ').trim();if(/Expected|Confirmed|Cancelled|Applied/i.test(tx)&&!cells[c].querySelector('select'))st=tx;if(/^(Old|New)\\s*(Male|Female)$/i.test(tx))ty=tx;if(/^\\d{1,3}$/.test(tx)&&+tx>5&&+tx<120)ag=tx}var btn=tr.querySelector('td:first-child'),dt='';if(btn){btn.click();await W(700);var nx=tr.nextElementSibling;if(nx)dt=nx.textContent||'';btn.click();await W(150)}var mob='',hom='';var m1=dt.match(/M:\\s*(\\d{7,15})/),m2=dt.match(/H:\\s*(\\d{7,15})/);if(m1)mob=m1[1];if(m2)hom=m2[1];if(nm)apps.push({name:nm,mobile:mob,home:hom,status:st,type:ty,age:ag})}var json=JSON.stringify(apps);var enc=btoa(unescape(encodeURIComponent(json)));bar.innerHTML='<div style=\"padding:4px 0\"><div style=\"font-size:15px;font-weight:700;margin-bottom:10px\">\\u2705 '+apps.length+' scraped!</div><div style=\"display:flex;gap:8px;justify-content:center;flex-wrap:wrap\"><button id=_dp style=\"background:%233b82f6;color:%23fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600\">\\u{1F4F1} Tracker</button><button id=_dc style=\"background:%2316a34a;color:%23fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600\">\\u{1F4CB} Copy</button><button id=_dx style=\"background:%23475569;color:%23fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600\">\\u2715</button></div></div>';D.getElementById('_dp').onclick=function(){window.open(P+'/index.html%23dipi='+enc,'_blank')};D.getElementById('_dc').onclick=function(){navigator.clipboard.writeText(json).then(function(){alert('Copied!')})};D.getElementById('_dx').onclick=function(){bar.remove()}}catch(e){msg('Error: '+e.message)}})())";
+  return "javascript:void((async function(){var D=document,B=D.body;var bar=D.createElement('div');bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:%231e293b;color:%23fff;padding:14px 18px;font:14px -apple-system,sans-serif;text-align:center;box-shadow:0 2px 20px rgba(0,0,0,.5)';B.appendChild(bar);function msg(t){bar.textContent='\\u{1F9D8} '+t}function W(ms){return new Promise(function(r){setTimeout(r,ms)})}try{msg('Loading all entries...');var sel=D.querySelector('select[name$=\"_length\"]');if(sel){var f=0;for(var j=0;j<sel.options.length;j++){if(sel.options[j].value==='-1'){sel.value='-1';f=1;break}}if(!f){var o=D.createElement('option');o.value='-1';o.text='All';sel.appendChild(o);sel.value='-1'}sel.dispatchEvent(new Event('change'));await W(2500)}msg('Scanning...');var tbl=D.querySelector('table.dataTable')||D.querySelector('table');if(!tbl){msg('No table!');return}var trs=tbl.querySelector('tbody').querySelectorAll('tr'),rows=[];for(var k=0;k<trs.length;k++){var tr=trs[k];if(!tr.classList.contains('child')&&!tr.classList.contains('detail-row')&&tr.querySelector('td'))rows.push(tr)}msg('Found '+rows.length+'. Reading...');var apps=[];for(var i=0;i<rows.length;i++){var tr=rows[i];msg('Reading '+(i+1)+'/'+rows.length);var cells=tr.querySelectorAll('td'),nm='',st='',ty='',ag='';for(var c=0;c<cells.length;c++){var tx=cells[c].textContent.trim();if(tx.indexOf('(PDF)')>-1)nm=tx.replace('(PDF)','').replace(/\\s+/g,' ').trim();if(/Expected|Confirmed|Cancelled|Applied/i.test(tx)&&!cells[c].querySelector('select'))st=tx;if(/^(Old|New)\\s*(Male|Female)$/i.test(tx))ty=tx;if(/^\\d{1,3}$/.test(tx)&&+tx>5&&+tx<120)ag=tx}var btn=tr.querySelector('td:first-child'),dt='';if(btn){btn.click();await W(700);var nx=tr.nextElementSibling;if(nx)dt=nx.textContent||'';btn.click();await W(150)}var mob='',hom='';var m1=dt.match(/M:\\s*(\\d{7,15})/),m2=dt.match(/H:\\s*(\\d{7,15})/);if(m1)mob=m1[1];if(m2)hom=m2[1];if(nm)apps.push({name:nm,mobile:mob,home:hom,status:st,type:ty,age:ag})}var json=JSON.stringify(apps);var enc=btoa(unescape(encodeURIComponent(json)));bar.innerHTML='<div style=\"padding:4px 0\"><div style=\"font-size:15px;font-weight:700;margin-bottom:10px\">\\u2705 '+apps.length+' scraped!</div><div style=\"display:flex;gap:8px;justify-content:center;flex-wrap:wrap\"><button id=_dc style=\"background:%232e7d5b;color:%23fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600\">\\u{1F4CB} Copy applicant data</button><button id=_dx style=\"background:%23475569;color:%23fff;border:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600\">\\u2715</button></div></div>';D.getElementById('_dc').onclick=function(){navigator.clipboard.writeText(json).then(function(){alert('Copied '+apps.length+' applicants to clipboard')})};D.getElementById('_dx').onclick=function(){bar.remove()}}catch(e){msg('Error: '+e.message)}})())";
 }
 
 document.getElementById('copyAllBtn').addEventListener('click', function() {
