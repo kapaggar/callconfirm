@@ -142,8 +142,16 @@
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       doc.querySelectorAll('script, style, head').forEach(el => el.remove());
-      let text = (doc.body.innerText || doc.body.textContent || '').trim();
-      text = text.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+/g, ' ').trim();
+      // DOMParser documents never render, so innerText yields no line breaks
+      // (the letter is one big <p> full of <br />) — materialize <br> and
+      // paragraph ends as newlines first, then read textContent.
+      doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+      doc.querySelectorAll('p').forEach(p => p.append('\n'));
+      let text = (doc.body.textContent || '').replace(/\u00a0/g, ' ');
+      text = text.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim()).join('\n');
+      text = text.replace(/\n{3,}/g, '\n\n').trim();
+      // Drop the first 2 lines (Google-Maps link + blank) so the message
+      // opens with the greeting — same intent as the original tail -n +3.
       const lines = text.split('\n');
       if (lines.length > 2) text = lines.slice(2).join('\n').trim();
       return text;
