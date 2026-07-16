@@ -455,6 +455,107 @@
     setState({ showExport: false });
   }
 
+  // ── Session backup / restore ──
+  // All call progress lives in this browser's IndexedDB; a profile wipe or a
+  // machine switch mid-course loses it, and a half-done calling session can't
+  // be handed to another volunteer. Backup = versioned JSON of one session
+  // (contains applicant PII — handle like the CSV exports). Restore merges
+  // into an existing session per applicant: newest lastAttempt wins, ties go
+  // to the record with progress, notes are never dropped, attempts take max.
+
+  // null when valid, else a human-readable rejection. (pure)
+  function validateBackup(p) {
+    if (!p || p.kind !== 'dipiTracker.session') return 'Not a tracker session backup';
+    if (p.v !== 1) return 'Unsupported backup version: ' + (p.v === undefined ? '?' : p.v);
+    const s = p.session;
+    if (!s || !s.title || !Array.isArray(s.applicants)) return 'Backup is missing session data';
+    return null;
+  }
+
+  // Merge incoming applicants into existing ones. Match by AID, else
+  // name+mobile. Returns { merged, stats:{ updated, added } }. (pure)
+  function mergeSessions(existing, incoming) {
+    const ts = (a) => (a && a.lastAttempt && Date.parse(a.lastAttempt)) || 0;
+    const hasProgress = (a) => (a.status && a.status !== 'pending') || ((a.attempts | 0) > 0) || !!(a.notes && a.notes.trim());
+    const keyOf = (a) => a.aid ? 'a:' + a.aid : 'n:' + (a.name || '').toLowerCase() + '|' + (a.mobile || '');
+    const map = new Map((existing.applicants || []).map(a => [keyOf(a), a]));
+    let updated = 0, added = 0;
+    for (const inc of (incoming.applicants || [])) {
+      const cur = map.get(keyOf(inc));
+      if (!cur) { map.set(keyOf(inc), inc); added++; continue; }
+      const incWins = ts(inc) > ts(cur) || (ts(inc) === ts(cur) && !hasProgress(cur) && hasProgress(inc));
+      const winner = incWins ? inc : cur, loser = incWins ? cur : inc;
+      const out = { ...winner };
+      if ((!out.notes || !out.notes.trim()) && loser.notes && loser.notes.trim()) out.notes = loser.notes;
+      out.attempts = Math.max(winner.attempts | 0, loser.attempts | 0);
+      if (incWins) updated++;
+      map.set(keyOf(inc), out);
+    }
+    const merged = [...map.values()].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' }));
+    return { merged, stats: { updated, added } };
+  }
+
+  async function exportBackup() {
+    const sess = await dbGet('sessions', state.activeId);
+    if (!sess) { showToast('No active session to back up'); setState({ showExport: false }); return; }
+    const payload = { kind: 'dipiTracker.session', v: 1, exportedAt: new Date().toISOString(), session: sess };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'session_' + (sess.title || 'course').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60) +
+      '_' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    showToast('Backup saved — contains applicant data, share only with course admins');
+    setState({ showExport: false });
+  }
+
+  function pickBackupFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.json,application/json';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      f.text()
+        .then(txt => importBackup(JSON.parse(txt)))
+        .catch(e => showToast('Import failed: ' + e.message));
+    };
+    inp.click();
+  }
+
+  async function importBackup(payload) {
+    const bad = validateBackup(payload);
+    if (bad) { showToast(bad); return; }
+    if (!db) await openDB();
+    const incoming = payload.session;
+    const all = await dbGetAll('sessions');
+    const existing = all.find(s => s.id === incoming.id) ||
+      all.find(s => s.title === incoming.title && (s.dates || '') === (incoming.dates || '')) ||
+      (incoming.courseKey ? all.find(s => s.courseKey === incoming.courseKey) : null);
+    if (existing) {
+      const { merged, stats } = mergeSessions(existing, incoming);
+      existing.applicants = merged;
+      existing.count = merged.length;
+      existing.dates = existing.dates || incoming.dates || '';
+      existing.courseType = existing.courseType || incoming.courseType || '';
+      existing.courseKey = existing.courseKey || incoming.courseKey || '';
+      existing.updatedAt = new Date().toISOString();
+      await dbPut('sessions', existing);
+      writeSessionIndexEntry(existing.courseKey, merged, existing.id);
+      state.sessions = await dbGetAll('sessions');
+      await loadSession(existing.id);
+      showToast('Merged backup into "' + existing.title + '" — ' + stats.updated + ' updated, ' + stats.added + ' added');
+    } else {
+      if (all.some(s => s.id === incoming.id)) incoming.id = 's-' + Date.now(); // stale id from another course
+      incoming.count = incoming.applicants.length;
+      await dbPut('sessions', incoming);
+      writeSessionIndexEntry(incoming.courseKey || '', incoming.applicants, incoming.id);
+      state.sessions = await dbGetAll('sessions');
+      await loadSession(incoming.id);
+      showToast('Imported "' + incoming.title + '" — ' + incoming.applicants.length + ' applicants');
+    }
+  }
+
   // ── Overlay shell ──
   const OVERLAY_ID = 'dipi-tracker-overlay';
 
@@ -562,9 +663,11 @@
               <div class="meta">${s.count} applicants · ${new Date(s.createdAt).toLocaleDateString('en-IN')}</div>
             </button>`).join('')}
           ` : '<div style="color:#94a3b8;font-size:13px">Run the scraper to start a session</div>'}
-          <button class="dt-btn dt-btn-red" id="dt-close" style="margin-top:24px">Close Tracker</button>
+          <button class="dt-btn dt-btn-gray" id="dt-import-backup" style="margin-top:16px" title="Restore a session_*.json backup exported on another machine or profile">📂 Import session backup</button>
+          <button class="dt-btn dt-btn-red" id="dt-close" style="margin-top:12px">Close Tracker</button>
         </div>`;
       ov.querySelectorAll('[data-sid]').forEach(b => b.addEventListener('click', () => loadSession(b.dataset.sid)));
+      ov.querySelector('#dt-import-backup')?.addEventListener('click', pickBackupFile);
       ov.querySelector('#dt-close')?.addEventListener('click', closeTracker);
       return;
     }
@@ -680,6 +783,8 @@
           <button id="dt-exp-csv">📊 Download CSV</button>
           <button id="dt-exp-pdf">🖨️ Print / PDF</button>
           <button id="dt-exp-aid">📤 AID:Phone for script</button>
+          <button id="dt-exp-backup">💾 Backup session (JSON)</button>
+          <button id="dt-exp-restore">📂 Import backup…</button>
         </div>` : ''}
         ${tminusHTML}
         ${Object.keys(groupStats).length ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join('')}</div>` : ''}
@@ -695,6 +800,8 @@
     ov.querySelector('#dt-exp-csv')?.addEventListener('click', exportCSV);
     ov.querySelector('#dt-exp-pdf')?.addEventListener('click', exportPDF);
     ov.querySelector('#dt-exp-aid')?.addEventListener('click', exportAIDPhone);
+    ov.querySelector('#dt-exp-backup')?.addEventListener('click', exportBackup);
+    ov.querySelector('#dt-exp-restore')?.addEventListener('click', () => { setState({ showExport: false }); pickBackupFile(); });
     ov.querySelector('#dt-close')?.addEventListener('click', closeTracker);
     ov.querySelector('#dt-rescrape')?.addEventListener('click', () => {
       closeTracker();
@@ -826,6 +933,6 @@
 
   root.DipiTracker = {
     open, import: importPublic, close: closeTracker,
-    _internal: { parseCourseStart, deadlineInfo, priorityRank }, // pure, for tests
+    _internal: { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions }, // pure, for tests
   };
 })(typeof window !== 'undefined' ? window : globalThis);

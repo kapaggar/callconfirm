@@ -38,7 +38,7 @@ Risk = chance of breaking something that already works (write paths, merges).
   compute the diff there before overwriting; UI is a pill + list. Care at the
   merge edge cases (no-AID rows match by nothing). No writes to dipi.
 
-### 3. Session export / import (backup + hand-off)
+### 3. Session export / import (backup + hand-off) — ✅ SHIPPED 2026-07-16
 - **Requirement:** Export the active session (applicants + call statuses +
   notes) to a JSON file; import it on another machine/profile, merging by AID
   with newest-timestamp-wins.
