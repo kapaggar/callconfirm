@@ -1,0 +1,9 @@
+{
+  "name": "callconfirm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DIPI course-admin browser tools — unit tests for the course-audit rule engine",
+  "scripts": {
+    "test": "node --test"
+  }
+}

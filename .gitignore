@@ -25,3 +25,6 @@ store-assets/
 
 # local AI-assistant config (per-machine permissions, not for publishing)
 .claude-wizni/
+
+# node (tests are zero-dependency, but guard against stray installs)
+node_modules/

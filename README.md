@@ -31,7 +31,20 @@ index.html             ← Static landing page (github.io) → points to the on-
 setup.html             ← One-time bookmarklet installer
 manifest.webmanifest   ← PWA config (renamed; manifest.json is the extension's)
 sw.js                  ← Landing-page offline support (network-first)
+test/                  ← Unit tests for the audit rule engine (node --test)
 ```
+
+## Tests
+
+The `course-audit` rule engine is pure JS, so it has unit tests (zero-dependency
+`node:test`):
+
+```bash
+npm test          # or: node --test
+```
+
+They also run in CI on every push and PR (`.github/workflows/test.yml`). When you
+change an audit rule, add or update a case in `test/audit.test.js`.
 
 ## Deploy
 
