@@ -1,6 +1,7 @@
-// v3: manifest.json is now the Chrome-extension MV3 manifest; the PWA manifest
-// moved to manifest.webmanifest. Cache bump evicts the precached old path.
-const CACHE = "vcall-v3";
+// v4: the PWA call-tracker was retired — index.html is now a static signpost to
+// the on-page inline tracker. The cache bump evicts the old precached app shell
+// (and its SheetJS bundle) so returning users get the landing page.
+const CACHE = "vcall-v4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", e => {
