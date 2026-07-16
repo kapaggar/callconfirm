@@ -21,7 +21,10 @@
   const STORE_KEY = 'photoReview.corrections';
   const MAX_STORE = 1000;
   const DISPLAY_W = 220;   // card canvas display width
-  const SCAN_W = 320;      // downscale for face detection
+  const SCAN_W = 640;      // downscale width for face detection (bigger = small
+                           // faces in full-body shots survive; BlazeFace short-
+                           // range needs the face to be a decent px size)
+  const RESCAN_W = 1024;   // sharper retry width when the SCAN_W pass finds nothing
   const TINY_FACE = 0.20;  // face area below this fraction => suggest passport crop
                            // (course 58 portraits ran 13-33%; zoom candidates 1.3-7.3%.
                            //  20% pulls every borderline shot into a standard crop)
@@ -433,7 +436,10 @@
       mpDetector = await vision.FaceDetector.createFromOptions(files, {
         baseOptions: { modelAssetPath: MP_SELF + 'blaze_face_short_range.tflite' },
         runningMode: 'IMAGE',
-        minDetectionConfidence: 0.5,
+        // Recall-biased: a small/backlit face against a busy background scores
+        // low, and every suggestion is human-confirmed (✓), so a marginal hit is
+        // cheaper than a "no face found" miss.
+        minDetectionConfidence: 0.3,
       });
     } catch (e) {
       mpDetector = null; // vendor assets missing/unreachable → native FaceDetector fallback
@@ -484,12 +490,13 @@
     })).sort((a, b) => (b.box.w * b.box.h) - (a.box.w * a.box.h));
   }
 
-  async function suggestFor(item) {
-    if (!item.bitmap) return null;
+  // Scan all four rotations at a given downscale width. Returns a per-rotation
+  // dets array, or null when no detection backend is available at all.
+  async function scanRotations(item, scanW) {
     const dets = [];
     for (const rot of [0, 90, 270, 180]) {
       const [rw, rh] = rotatedDims(item.bitmap.width, item.bitmap.height, rot);
-      const scale = Math.min(1, SCAN_W / rw);
+      const scale = Math.min(1, scanW / rw); // never upscale past native
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(rw * scale));
       c.height = Math.max(1, Math.round(rh * scale));
@@ -506,6 +513,21 @@
         box: f.box,
         landmarksOk: f.upright,
       });
+    }
+    return dets;
+  }
+
+  async function suggestFor(item) {
+    if (!item.bitmap) return null;
+    let dets = await scanRotations(item, SCAN_W);
+    if (dets === null) return null; // no detection backend available
+    // Small face in a wide/full-body shot can fall below the detector's floor at
+    // the base width. If nothing was found and the source has resolution to
+    // spare, retry once sharper before giving up ("no face found").
+    if (!dets.some(d => d.faces > 0) &&
+        Math.max(item.bitmap.width, item.bitmap.height) > SCAN_W) {
+      const sharper = await scanRotations(item, RESCAN_W);
+      if (sharper && sharper.some(d => d.faces > 0)) dets = sharper;
     }
     item.dets = dets; // kept for the ▦ Boxes overlay and the badge tooltip
     return classifyDetections(dets, { tinyFace: TINY_FACE });
