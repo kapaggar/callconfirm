@@ -2,11 +2,17 @@
 
 Personal browser tooling for Dhamma Sudha Vipassana centre (centre 63 on dipi.vridhamma.org):
 a call-confirmation tracker plus a pre-course data-quality audit. Vanilla JS, no build step,
-no tests, no dependencies except one: photo-review uses MediaPipe tasks-vision (pinned,
+no runtime dependencies except one: photo-review uses MediaPipe tasks-vision (pinned,
 on-device WASM) for face detection — self-hosted under `vendor/mediapipe/` only, no CDN
 (MV3/Web Store forbids remote code; never add remote script/wasm URLs to files shipped in
 the extension zip). Deployed by pushing to `main` — GitHub Pages serves the repo at
 `https://kapaggar.github.io/callconfirm/`.
+
+The `course-audit` rule engine (`course-audit/audit.js`) is pure and framework-agnostic,
+so it has unit tests: run `npm test` (or `node --test`) — zero-dependency `node:test`, also
+run in CI on push/PR (`.github/workflows/test.yml`). When you change an audit rule, add or
+update a case in `test/audit.test.js`. The DOM-bound tools (scraper/tracker/loader/review)
+have no automated tests.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
 DIPI endpoint captures, data model, decisions, roadmap). `course-audit/README.md` covers the
