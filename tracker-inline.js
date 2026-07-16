@@ -251,6 +251,29 @@
     return PRIORITY[a.status] !== undefined ? PRIORITY[a.status] : 3;
   }
 
+  // ── Wait-list backfill pool ──
+  // Applicants scraped with dipi status WaitList or Review are the backfill
+  // pool: kept OUT of the main calling queue and its stats (behind the 🪑 Pool
+  // pill), and offered as candidates when a confirmed seat frees up.
+
+  // Pool membership from the scraped dipi status. (pure)
+  function isPool(a) {
+    return /^(waitlist|review)/i.test(String((a && a.dipiStatus) || ''));
+  }
+
+  // Backfill candidates for a freed seat: pool members of the same group
+  // (gender balance — NM can only replace NM etc.; no group on the cancelled
+  // row matches anyone), excluding candidates already called off (cancelled),
+  // ordered still-to-reach first then by name, capped. (pure)
+  function backfillCandidates(applicants, cancelled, max = 3) {
+    return (applicants || [])
+      .filter(a => isPool(a) && a.status !== 'cancelled' &&
+        (!cancelled.group || a.group === cancelled.group))
+      .sort((a, b) => (priorityRank(a) - priorityRank(b)) ||
+        (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' }))
+      .slice(0, max);
+  }
+
   // ── Session index (synchronous lookup for scraper) ──
   // Mirrors a small summary of each session into localStorage keyed by
   // "centreid/courseid". Lets the scraper detect existing sessions for
@@ -618,6 +641,11 @@
       #${OVERLAY_ID} .dt-phone-home   { background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; }
       #${OVERLAY_ID} .dt-phone-wa     { background:#dcfce7; border:1px solid #86efac; color:#15803d; }
       #${OVERLAY_ID} .dt-status-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:10px; }
+      #${OVERLAY_ID} .dt-backfill { margin-top:10px; padding:8px 10px; background:#f4f1f8; border:1px solid #ddd6e8; border-radius:8px; }
+      #${OVERLAY_ID} .dt-backfill-title { font-size:11px; font-weight:700; color:#7d639c; margin-bottom:6px; }
+      #${OVERLAY_ID} .dt-backfill-cand { display:block; width:100%; text-align:left; padding:6px 8px; margin-bottom:4px; border:1px solid #e2e8f0; background:#fff; border-radius:6px; font-size:12px; color:#334155; cursor:pointer; }
+      #${OVERLAY_ID} .dt-backfill-cand:active { background:#f1f5f9; }
+      #${OVERLAY_ID} .dt-backfill-none { font-size:11px; color:#94a3b8; }
       #${OVERLAY_ID} .dt-dipi-status { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
       #${OVERLAY_ID} .dt-dipi-label { font-size:11px; color:#64748b; flex:1; min-width:120px; }
       #${OVERLAY_ID} .dt-dipi-label b { color:#1e293b; }
@@ -672,17 +700,21 @@
       return;
     }
 
+    // Wait-list/Review rows are the backfill pool — out of the main queue
+    // and its stats, behind the 🪑 pill.
+    const mainA = A.filter(a => !isPool(a));
+    const poolA = A.filter(isPool);
     const stats = {};
-    A.forEach(a => { stats[a.status] = (stats[a.status] || 0) + 1; });
-    const pending = A.filter(a => ['pending', 'no_answer', 'callback'].includes(a.status)).length;
+    mainA.forEach(a => { stats[a.status] = (stats[a.status] || 0) + 1; });
+    const pending = mainA.filter(a => ['pending', 'no_answer', 'callback'].includes(a.status)).length;
     const { groupFilter, courseDates, courseType } = state;
 
     const GROUPS = { NM:'New ♂', OM:'Old ♂', SM:'Seva ♂', NF:'New ♀', OF:'Old ♀', SF:'Seva ♀' };
     const groupStats = {};
     A.forEach(a => { if (a.group) groupStats[a.group] = (groupStats[a.group] || 0) + 1; });
 
-    const filtered = A.filter(a => {
-      if (filter !== 'all' && a.status !== filter) return false;
+    const filtered = (filter === 'pool' ? poolA : mainA).filter(a => {
+      if (filter !== 'all' && filter !== 'pool' && a.status !== filter) return false;
       if (groupFilter !== 'all' && a.group !== groupFilter) return false;
       if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -704,10 +736,11 @@
       return `<div class="dt-tminus ${cd.level}" id="dt-tminus" title="Centres auto-cancel seats not reconfirmed ~2–3 weeks before start. Click to switch the deadline offset (7/14/21 days).">⏳ ${txt}</div>`;
     })() : '';
 
-    const statPills = [`<button class="dt-pill ${filter==='all'?'active':''}" data-flt="all">All ${A.length}</button>`];
+    const statPills = [`<button class="dt-pill ${filter==='all'?'active':''}" data-flt="all">All ${mainA.length}</button>`];
     Object.entries(STATUSES).forEach(([k,v]) => {
       if (stats[k] > 0) statPills.push(`<button class="dt-pill ${filter===k?'active':''}" data-flt="${k}">${v.icon} ${stats[k]}</button>`);
     });
+    if (poolA.length) statPills.push(`<button class="dt-pill ${filter==='pool'?'active':''}" data-flt="pool" title="Wait-list / Review applicants — backfill candidates for freed seats">🪑 ${poolA.length}</button>`);
 
     const groupPills = [`<button class="dt-pill ${groupFilter==='all'?'active':''}" data-grp="all">All</button>`];
     Object.entries(GROUPS).forEach(([k,label]) => {
@@ -746,10 +779,24 @@
         const statusBtns = Object.entries(STATUSES).filter(([k]) => k !== 'pending').map(([k,v]) =>
           `<button class="dt-status-btn" data-mark="${a.id}|${k}" style="border:${a.status===k?'2px solid '+v.color:'1px solid #e2e8f0'};background:${a.status===k?v.bg:'#fff'};color:${a.status===k?v.color:'#64748b'}">${v.icon}<br>${v.label}</button>`
         ).join('');
+
+        // Freed seat → same-group wait-list/review candidates to call next
+        let backfill = '';
+        if (a.status === 'cancelled' && !isPool(a)) {
+          const cands = backfillCandidates(A, a);
+          backfill = `<div class="dt-backfill">
+            <div class="dt-backfill-title">🪑 Seat freed — backfill candidates${a.group ? ' (group ' + escHtml(a.group) + ')' : ''}</div>
+            ${cands.length ? cands.map(c =>
+              `<button class="dt-backfill-cand" data-bf="${c.id}" title="Open this candidate in the pool view">${STATUSES[c.status]?.icon || ''} ${escHtml(c.name)} · ${escHtml((c.dipiStatus || '').replace(/\s*\(.*\)\s*$/, ''))}${c.mobile ? ' · ' + escHtml(c.mobile) : ''}</button>`
+            ).join('') : '<div class="dt-backfill-none">No wait-list/review candidates' + (a.group ? ' in group ' + escHtml(a.group) : '') + ' — check the 🪑 pool pill</div>'}
+          </div>`;
+        }
+
         exp = `<div class="dt-card-expanded">
           <div class="dt-phone-btns">${phoneBtns.join('')}</div>
           ${dipiBlock}
           <div class="dt-status-grid">${statusBtns}</div>
+          ${backfill}
           <textarea class="dt-notes" placeholder="Add a note..." data-note="${a.id}">${escHtml(a.notes || '')}</textarea>
           ${a.status !== 'pending' ? `<button class="dt-reset-btn" data-mark="${a.id}|pending">↩ Reset to Pending</button>` : ''}
         </div>`;
@@ -770,7 +817,7 @@
         <div class="dt-header-top">
           <div style="min-width:0;flex:1">
             <h1>🧘 ${escHtml(courseDates || courseTitle)}</h1>
-            <div class="sub">${A.length} applicants · ${pending} remaining${courseType?' · '+courseType:''}</div>
+            <div class="sub">${mainA.length} applicants · ${pending} remaining${poolA.length?' · '+poolA.length+' in pool':''}${courseType?' · '+courseType:''}</div>
           </div>
           <div class="dt-header-btns">
             <button class="dt-btn dt-btn-blue" id="dt-export-btn">📤 Export</button>
@@ -829,6 +876,10 @@
     }));
     ov.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => {
       setState({ expandedId: state.expandedId === b.dataset.toggle ? null : b.dataset.toggle });
+    }));
+    ov.querySelectorAll('[data-bf]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      setState({ filter: 'pool', groupFilter: 'all', search: '', expandedId: b.dataset.bf });
     }));
     ov.querySelectorAll('[data-call]').forEach(b => b.addEventListener('click', () => logAttempt(b.dataset.call)));
     ov.querySelectorAll('[data-wa]').forEach(b => b.addEventListener('click', e => {
@@ -933,6 +984,6 @@
 
   root.DipiTracker = {
     open, import: importPublic, close: closeTracker,
-    _internal: { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions }, // pure, for tests
+    _internal: { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions, isPool, backfillCandidates }, // pure, for tests
   };
 })(typeof window !== 'undefined' ? window : globalThis);

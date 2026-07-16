@@ -8,7 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 require('../tracker-inline.js');
-const { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions } = globalThis.DipiTracker._internal;
+const { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions, isPool, backfillCandidates } = globalThis.DipiTracker._internal;
 
 // ── parseCourseStart ──
 
@@ -145,4 +145,43 @@ test('no AID: falls back to name+mobile matching', () => {
   assert.strictEqual(merged.length, 1);
   assert.strictEqual(merged[0].status, 'confirmed');
   assert.deepStrictEqual(stats, { updated: 1, added: 0 });
+});
+
+// ── wait-list backfill pool ──
+
+test('isPool: WaitList and Review are pool, others are not', () => {
+  assert.strictEqual(isPool({ dipiStatus: 'WaitList (NM4)' }), true);
+  assert.strictEqual(isPool({ dipiStatus: 'Review' }), true);
+  assert.strictEqual(isPool({ dipiStatus: 'waitlist' }), true);
+  assert.strictEqual(isPool({ dipiStatus: 'Expected (OM2)' }), false);
+  assert.strictEqual(isPool({ dipiStatus: 'Confirmed' }), false);
+  assert.strictEqual(isPool({ dipiStatus: '' }), false);
+  assert.strictEqual(isPool({}), false);
+});
+
+test('backfillCandidates: same group only, called-off excluded, pending first, capped', () => {
+  const cancelled = { name: 'Gone Person', group: 'NM', status: 'cancelled', dipiStatus: 'Confirmed (NM1)' };
+  const pool = (o) => ({ status: 'pending', dipiStatus: 'WaitList (NM9)', group: 'NM', mobile: '+919000000000', ...o });
+  const applicants = [
+    cancelled,
+    pool({ name: 'D Confirmed-already', status: 'confirmed' }),   // reached, ranks after pending
+    pool({ name: 'A Wrong-group', group: 'NF' }),                 // excluded: gender balance
+    pool({ name: 'C Declined', status: 'cancelled' }),            // excluded: called off
+    pool({ name: 'B Pending' }),
+    pool({ name: 'E Pending' }),
+    pool({ name: 'F Pending' }),
+    { name: 'Main Queue Guy', group: 'NM', status: 'pending', dipiStatus: 'Expected (NM2)' }, // not pool
+  ];
+  const c = backfillCandidates(applicants, cancelled);
+  assert.strictEqual(c.length, 3); // capped
+  assert.deepStrictEqual(c.map(x => x.name), ['B Pending', 'E Pending', 'F Pending']);
+});
+
+test('backfillCandidates: cancelled row without a group matches any pool group', () => {
+  const cancelled = { name: 'No Group', group: '', status: 'cancelled' };
+  const applicants = [
+    { name: 'X', group: 'NF', status: 'pending', dipiStatus: 'Review' },
+    { name: 'Y', group: 'OM', status: 'pending', dipiStatus: 'WaitList (OM3)' },
+  ];
+  assert.strictEqual(backfillCandidates(applicants, cancelled).length, 2);
 });

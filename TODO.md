@@ -54,12 +54,11 @@ Risk = chance of breaking something that already works (write paths, merges).
 
 ## P2 — high value, needs more care
 
-### 4. Wait-list backfill assistant
-- **Requirement:** Scrape must include `WaitList` status rows (today
-  `STATUS_FILTER` in `scraper.js` is hardcoded `Expected,Confirmed`). When an
-  applicant is marked Cancelled, surface "next eligible wait-list candidates"
-  filtered to the same gender/group (NM/OM/NF/OF/SM/SF already captured), with
-  call/WhatsApp buttons.
+### 4. Wait-list backfill assistant — ✅ SHIPPED 2026-07-16
+- **Requirement:** Scrape includes `WaitList` **and `Review`** rows (pool);
+  the tracker keeps pool members out of the main queue/stats behind a 🪑 pill.
+  When an applicant is marked Cancelled, their card surfaces same-group
+  (NM/OM/NF/OF/SM/SF) pool candidates, pending-first, with jump-to-card.
 - **Helps:** Late cancellations "often lead to unfilled vacancies" — seats sit
   empty because backfill is slow and gender-constrained. This closes the loop
   from cancellation to offer in one click.

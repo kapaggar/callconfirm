@@ -57,7 +57,9 @@ orientation.
 - `localStorage.dipiTracker.sessionIndex` (keyed `centreid/courseid`) is how the scraper detects
   an in-progress session; the tracker writes it on import and every save.
 - Escape user/scraped strings with the local `escHtml()` before interpolating into innerHTML.
-- Centre ID `63` and status filter `Expected,Confirmed` are hardcoded in `scraper.js`.
+- Centre ID `63` and status filter `Expected,Confirmed,WaitList,Review` are hardcoded in
+  `scraper.js`. WaitList/Review rows are the backfill pool: the tracker keeps them out of the
+  main queue/stats (🪑 pill) and offers same-group candidates when a seat is cancelled.
 - Applicant data is sensitive (names, phones, health disclosures). Keep everything client-side;
   nothing may leave the browser except explicit user actions (wa.me, exports).
 - 👥 Duplicates (photo-review/facematch.js) stores **face descriptors** — biometric-adjacent —

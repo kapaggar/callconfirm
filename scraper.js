@@ -11,7 +11,10 @@
   var CID = '63';
   var CENTRE_URL = '/centre/' + CID;
   var SEARCH_BASE = '/search-course/' + CID + '/';
-  var STATUS_FILTER = 'Expected,Confirmed';
+  // WaitList + Review ride along as the backfill pool: the tracker keeps them
+  // out of the main calling queue and offers them as candidates when a
+  // confirmed seat frees up (cancellation).
+  var STATUS_FILTER = 'Expected,Confirmed,WaitList,Review';
   // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
   // wins, else derive from this script's own URL (works for the web-hosted AND the
   // chrome-extension:// copy — must run synchronously; currentScript is null
@@ -215,7 +218,7 @@
                 }
               }
             }
-            if (/^(Expected|Confirmed|Cancelled|Received|Attended|Left)/i.test(tx) && !cells[c].querySelector('select')) {
+            if (/^(Expected|Confirmed|Cancelled|Received|Attended|Left|WaitList|Review)/i.test(tx) && !cells[c].querySelector('select')) {
               st = tx.replace(/\n.*/s, '').trim();
               var gm = tx.match(/\(([A-Z]{2})\d+\)/);
               if (gm) groupCode = gm[1];
@@ -273,6 +276,7 @@
     apps.forEach(function (a) { if (g[a.group] !== undefined) g[a.group]++; });
     var nExp = apps.filter(function (a) { return /Expected/i.test(a.status); }).length;
     var nConf = apps.filter(function (a) { return /Confirmed/i.test(a.status); }).length;
+    var nPool = apps.filter(function (a) { return /^(WaitList|Review)/i.test(a.status); }).length;
     var withAid = apps.filter(function (a) { return a.aid; }).length;
     var cleanTitle = title.replace(/Status:.*?,?\s*/i, '').replace(/Gender:.*$/i, '').trim() || 'Dhamma Sudha Course';
 
@@ -298,7 +302,7 @@
       (dates ? '<div style="font-size:11px;color:#8aa8cc;margin-top:2px">\u{1F4C5} ' + dates + '</div>' : '') +
       '<div style="font-size:10px;color:#64748b;margin-top:4px">AIDs captured: ' + withAid + '/' + apps.length + '</div>' +
       '<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:14px 0">' +
-      bdg('Exp', nExp) + bdg('Conf', nConf) +
+      bdg('Exp', nExp) + bdg('Conf', nConf) + bdg('🪑 Pool', nPool) +
       bdg('NM', g.NM) + bdg('OM', g.OM) + bdg('SM', g.SM) +
       bdg('NF', g.NF) + bdg('OF', g.OF) + bdg('SF', g.SF) +
       '</div>' +

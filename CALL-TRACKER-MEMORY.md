@@ -113,7 +113,7 @@ For each applicant it extracts:
 }
 ```
 
-Status filter is hardcoded to `Expected,Confirmed` in the URL the picker navigates to. Centre ID is hardcoded to `63`.
+Status filter is hardcoded to `Expected,Confirmed,WaitList,Review` in the URL the picker navigates to (WaitList/Review = the tracker's backfill pool). Centre ID is hardcoded to `63`.
 
 ### Import into tracker
 
