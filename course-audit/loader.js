@@ -636,6 +636,23 @@ ${sections.join('\n\n')}`;
 
   const cached = loadCache().map(c => `${c.courseId} (${c.rows.length})`).join(', ');
 
+  // Face-duplicate flags written by photo-review's 👥 Duplicates scan (same
+  // courseKey shape, "centreid/courseid"). Summary only — names + distances,
+  // no biometric data. Empty until that scan has been run for this course.
+  const esc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const faceFlags = (() => {
+    try { return JSON.parse(localStorage.getItem('faceDedup.flags') || '{}')[courseKey] || null; }
+    catch { return null; }
+  })();
+  const faceFlagsHTML = () => {
+    if (!faceFlags || !faceFlags.matches.length) return '';
+    return `<div style="margin:6px 0 2px;font-size:11px;color:#666">👥 Face matches from the photo scan (${new Date(faceFlags.ts).toLocaleDateString('en-IN')}) — verify ID documents before acting:</div>` +
+      faceFlags.matches.map(m => `<div class="finding f-dup">
+        <b>${esc_(m.name)}</b> ↔ ${esc_(m.otherName)}<br>
+        <span class="desc">matched by face — ${m.withinCourse ? 'same course' : 'course ' + esc_(m.otherCourse)}, distance ${esc_(m.dist)} (${esc_(m.tier)})</span>
+      </div>`).join('');
+  };
+
   const buildPanelHTML = () => `
     <div class="hdr">
       <div class="hdr-left">
@@ -656,7 +673,7 @@ ${sections.join('\n\n')}`;
     </label>
     <details open><summary><span class="sec sec-red">Hard errors</span> <span class="cnt">(${findings.hardErrors.length})</span></summary>${renderList(findings.hardErrors)}</details>
     <details ${findings.safety.length?'open':''}><summary><span class="sec sec-amber">Safety</span> <span class="cnt">(${findings.safety.length})</span></summary>${renderList(findings.safety)}</details>
-    <details ${findings.crossCourse.length?'open':''}><summary><span class="sec sec-blue">Cross-course</span> <span class="cnt">(${findings.crossCourse.length})</span></summary>${renderList(findings.crossCourse)}</details>
+    <details ${(findings.crossCourse.length || (faceFlags && faceFlags.matches.length))?'open':''}><summary><span class="sec sec-blue">Cross-course</span> <span class="cnt">(${findings.crossCourse.length}${faceFlags && faceFlags.matches.length ? ' + ' + faceFlags.matches.length + ' 👥' : ''})</span></summary>${renderList(findings.crossCourse)}${faceFlagsHTML()}</details>
     <details><summary><span class="sec sec-gray">Soft / advisory</span> <span class="cnt">(${findings.soft.length})</span></summary>${renderList(findings.soft)}</details>
     <details><summary><span class="sec-min">Sensitive field counts</span></summary><pre>${JSON.stringify(findings.sensitiveCounts,null,2)}</pre></details>
     <details><summary><span class="sec-min">Cache</span></summary><div class="cache">${cached || '(empty)'}</div></details>

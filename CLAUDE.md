@@ -29,10 +29,11 @@ audit side. This file is only the quick orientation.
 | `manifest.json` | Chrome extension (MV3) manifest — the repo root IS the extension (load unpacked) |
 | `extension-fab.js` | Extension content script (isolated world); injects the bundled tools into the page's MAIN world |
 | `vendor/mediapipe/` | Self-hosted face-detection lib + model, pinned; hashes in its README |
+| `vendor/faceapi/` | Self-hosted face-recognition lib + weights (face-api.js, pinned) for 👥 Duplicates; hashes in its README |
 | `index.html` | Static landing page at github.io — signposts to the on-page inline tracker (no app/tracker code; retired the duplicate PWA tracker) |
 | `sw.js`, `manifest.webmanifest`, `setup.html` | PWA plumbing for the landing page (`manifest.json` now belongs to the extension) |
 | `course-audit/` | Separate rule-engine + panel (audit.js / loader.js / userscript.user.js) |
-| `photo-review/` | Applicant photo rotate/crop overlay, local-only (review.js / userscript.user.js) |
+| `photo-review/` | Applicant photo rotate/crop overlay, local-only (review.js / facematch.js / userscript.user.js) |
 
 ## Conventions and gotchas
 
@@ -58,6 +59,10 @@ audit side. This file is only the quick orientation.
 - Centre ID `63` and status filter `Expected,Confirmed` are hardcoded in `scraper.js`.
 - Applicant data is sensitive (names, phones, health disclosures). Keep everything client-side;
   nothing may leave the browser except explicit user actions (wa.me, exports).
+- 👥 Duplicates (photo-review/facematch.js) stores **face descriptors** — biometric-adjacent —
+  in IndexedDB `vcall_faces` (dipi origin, last 12 courses). They must NEVER leave the browser;
+  only the name+distance summary goes to `localStorage.faceDedup.flags` (read by the audit
+  panel's Cross-course section). ♻ Reset local wipes both. Matches are leads, not proof.
 
 ## Working style (Kapil)
 

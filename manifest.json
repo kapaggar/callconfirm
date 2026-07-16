@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DIPI Tools (Audit / Scrape / Photos)",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "Audit, Scrape and Photos tools for dipi.vridhamma.org course admin volunteers. All data stays in the browser.",
   "homepage_url": "https://github.com/kapaggar/callconfirm",
   "icons": {
@@ -24,8 +24,10 @@
         "course-audit/loader.js",
         "course-audit/audit.js",
         "photo-review/review.js",
+        "photo-review/facematch.js",
         "vendor/mediapipe/*",
-        "vendor/mediapipe/wasm/*"
+        "vendor/mediapipe/wasm/*",
+        "vendor/faceapi/*"
       ],
       "matches": ["https://*.vridhamma.org/*"]
     }

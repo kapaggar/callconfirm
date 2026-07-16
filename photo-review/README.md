@@ -11,6 +11,7 @@ Works on any centre — nothing is hardcoded.
 | File | Role |
 |---|---|
 | `review.js` | The overlay: review grid, rotate/crop, FaceDetector auto-suggest + confidence-gated auto-fix, JPEG export. Cache-busted (`?v=Date.now()`) — updates go live on next run after push. |
+| `facematch.js` | 👥 Duplicates: on-device face-embedding match across courses (face-api.js under `vendor/faceapi/`). Lazy-loaded by review.js; matching math unit-tested (`test/facematch.test.js`). |
 | `userscript.user.js` | Tampermonkey shell. Adds "📷 Photos" to the shared FAB stack (`data-order` 30, below Audit 10 and Scrape 20). Auto-run defaults **off** (image loading is heavy); right-click the button to toggle. |
 | `bookmarklet.txt` | One-click alternative for machines without Tampermonkey. |
 
@@ -33,13 +34,16 @@ Works on any centre — nothing is hardcoded.
 5. **Keyboard:** ←/→ select card, `r` rotate clockwise, `d` toggle done, `s` download.
 6. **⬇ Download fixed** exports every photo marked ✓ that has a correction (allow multiple downloads when Chrome asks).
 7. Filters: All / ⚠ Suggested / ✨ Auto-fixed / ✓ Fixed / ⏳ Unreviewed.
-8. **♻ Reset local** (header) discards ALL locally saved corrections — every course, not just the open one: rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers. Behind a confirm; cannot be undone. dipi is untouched, so photos already uploaded stay corrected there.
+8. **👥 Duplicates** (header): flags applicants whose **face** matches another applicant — across the last 12 scanned courses *and* within the current one (same person applying twice under different names). Detection (BlazeFace) only finds faces; identity needs embeddings, so this uses **face-api.js** (pinned under `vendor/faceapi/`, ~7 MB, loaded only on first use): TinyFaceDetector → landmarks → 128-d descriptor per applicant, computed from the *corrected* (rotation-fixed) photo — run ⚡ Auto-scan / fix rotations first for best results. Descriptors are stored in IndexedDB (`vcall_faces`, dipi origin); each course you scan enriches the index the next scan compares against. Matches show as a maroon badge on the card (solid = strong, distance ≤0.45; translucent = possible, ≤0.55), plus a summary table, and are also listed in the course-audit panel's **Cross-course** section (`matched by face`). **A match is a lead, not proof** — twins/siblings and poor photos can match; verify ID documents before acting.
+9. **♻ Reset local** (header) discards ALL locally saved corrections — every course, not just the open one: rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers — **plus all stored face signatures and duplicate flags**. Behind a confirm; cannot be undone. dipi is untouched, so photos already uploaded stay corrected there.
 
 Corrections persist in localStorage and re-apply whenever the same photo ID appears again (re-opening the course, or the same applicant in another course). Once a photo has been **uploaded to dipi**, the stored geometry is zeroed and an `uploaded` marker is kept instead — the fix now lives in dipi's pixels, so re-applying the saved rotation would double-rotate the already-fixed photo (and a later batch upload would write that corruption back). The ⬆dipi button shows ✓dipi until you make a new correction, which re-arms it.
 
 ## Privacy
 
 Applicant photos are sensitive (faces, ID documents). Everything runs in the browser: the photo fetch is same-origin using your existing dipi session, face detection is on-device (MediaPipe WASM or Chrome's Shape Detection API — the model/library download is inbound code only; **no photo pixels are ever sent anywhere** by detection), and localStorage holds only geometry. Pixels leave the page only via your explicit download or ⬆dipi upload. The MediaPipe version is pinned (`0.10.14`) — bump it deliberately, never float to latest.
+
+👥 Duplicates additionally stores **face descriptors** (128-number embeddings) in IndexedDB on the dipi origin. These are biometric-adjacent data: they identify a face even without the photo. They never leave the browser, are capped to the last 12 courses, and are wiped by ♻ Reset local (or DevTools: `indexedDB.deleteDatabase('vcall_faces')` + `localStorage.removeItem('faceDedup.flags')`). If multiple admins share a machine, reset after use. face-api.js is pinned (`0.22.2`, hashes in `vendor/faceapi/README.md`).
 
 ## Write corrected photos back to dipi
 

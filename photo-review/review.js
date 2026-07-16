@@ -425,6 +425,8 @@
     const cs = document.currentScript;
     return (cs && cs.src) ? new URL('../vendor/mediapipe/', cs.src).href : null;
   })();
+  // Own URL — lazy-loads the sibling facematch.js when 👥 Duplicates is used.
+  const PR_SELF = (document.currentScript && document.currentScript.src) || null;
   let mpDetector = null, mpTried = false;
   async function getMpDetector() {
     if (mpDetector || mpTried) return mpDetector;
@@ -644,11 +646,14 @@
   // Local-only: nothing on dipi is touched.
   function resetLocal() {
     const stored = Object.keys(loadStore()).length;
-    if (!confirm('Reset local photo cache?\n\nThis discards ALL locally saved corrections (' + stored + ' photo(s), across every course): rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers.\n\nPhotos already uploaded to dipi are NOT affected. This cannot be undone.')) return;
+    if (!confirm('Reset local photo cache?\n\nThis discards ALL locally saved corrections (' + stored + ' photo(s), across every course): rotations, crops, ✓ fixed marks, ✨ auto flags and uploaded markers — plus every stored face signature and duplicate flag from 👥 Duplicates.\n\nPhotos already uploaded to dipi are NOT affected. This cannot be undone.')) return;
     try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    // Face-dedup biometric data: wipe directly (facematch.js may not be loaded)
+    try { localStorage.removeItem('faceDedup.flags'); } catch (e) {}
+    try { indexedDB.deleteDatabase('vcall_faces'); } catch (e) {}
     state.items.forEach(it => {
       it.rot = 0; it.crop = null; it.done = false; it.auto = false;
-      it.suggestion = null; it.uploaded = false; it.uploadedAt = null;
+      it.suggestion = null; it.uploaded = false; it.uploadedAt = null; it.dup = null;
       if (it.el) updateCard(it);
     });
     updatePills();
@@ -716,6 +721,10 @@
       #${OVERLAY_ID} .pr-badge.nf { background:#64748b; cursor:default; }
       #${OVERLAY_ID} .pr-badge.good { background:#3d8b62; cursor:default; }
       #${OVERLAY_ID} .pr-badge.auto { background:#5a63a8; }
+      #${OVERLAY_ID} .pr-dup-badge { position:absolute; bottom:6px; left:6px; background:#8f3c50; color:#fff;
+        font-size:10px; font-weight:700; padding:3px 7px; border-radius:6px; cursor:default; max-width:92%;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      #${OVERLAY_ID} .pr-dup-badge.possible { background:rgba(143,60,80,.72); }
       #${OVERLAY_ID} .pr-meta { padding:8px 10px 2px; }
       #${OVERLAY_ID} .pr-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       #${OVERLAY_ID} .pr-sub { font-size:10px; color:#94a3b8; }
@@ -841,6 +850,19 @@
           wrap.appendChild(badge);
         }
       }
+    }
+    // Duplicate-face badge (bottom-left, independent of the correction badge).
+    // Rebuilt each render; set by 👥 Duplicates, cleared on the next run.
+    el.querySelector('.pr-dup-badge')?.remove();
+    if (item.dup) {
+      const b = document.createElement('div');
+      b.className = 'pr-dup-badge' + (item.dup.tier === 'possible' ? ' possible' : '');
+      b.textContent = '👥 ' + (item.dup.withinCourse ? 'dup in course: ' : '') + item.dup.otherName +
+        (item.dup.withinCourse ? '' : ' @ ' + item.dup.otherCourse);
+      b.title = 'Face matches ' + item.dup.otherName +
+        (item.dup.withinCourse ? ' in this same course' : ' in course ' + item.dup.otherCourse) +
+        ' — distance ' + item.dup.dist + ' (' + item.dup.tier + '). A lead, not proof: verify ID documents before acting.';
+      wrap.appendChild(b);
     }
     el.querySelector('[data-act="done"]').classList.toggle('on', !!item.done);
     el.querySelector('[data-act="crop"]').classList.toggle('on', !!item.crop);
@@ -1072,6 +1094,98 @@
     toast('Scan done — ' + c.suggested + ' photo(s) look wrong');
   }
 
+  // ── 👥 Duplicates: face-embedding match against stored courses ──
+  // Descriptors + matching live in the sibling facematch.js (lazy-loaded);
+  // everything runs on-device and the biometric data stays in this browser.
+  function loadFaceMatch() {
+    if (window.FaceMatch) return Promise.resolve(true);
+    if (!PR_SELF) return Promise.resolve(false);
+    return new Promise((res) => {
+      const s = document.createElement('script');
+      s.src = new URL('facematch.js', PR_SELF).href + '?v=' + Date.now();
+      s.onload = () => res(!!window.FaceMatch);
+      s.onerror = () => res(false);
+      document.head.appendChild(s);
+    });
+  }
+
+  function dedupCourseKey() {
+    const m = location.pathname.match(/\/search-course\/(\d+)\/(\d+)/);
+    return m ? m[1] + '/' + m[2] : location.pathname; // "63/66893" — same shape as the audit's courseKey
+  }
+
+  async function findDuplicates() {
+    if (state.scanning) return;
+    state.scanning = true;
+    const btn = document.getElementById('pr-dedup');
+    const setLbl = (t) => { if (btn) btn.textContent = t; };
+    try {
+      if (!(await loadFaceMatch())) { toast('Face-match module failed to load'); return; }
+      setLbl('👥 Loading model…');
+      if (!(await window.FaceMatch.load())) { toast('Face-recognition model failed to load (vendor assets unreachable)'); return; }
+      const ck = dedupCourseKey();
+      // Descriptors need pixels: load every photo, embed the corrected
+      // (upright) image so sideways photos still match.
+      const entries = [];
+      let n = 0;
+      for (const item of state.items) {
+        setLbl('👥 Photos ' + (++n) + '/' + state.items.length + '…');
+        if (!item.bitmap && !item.loadError) await loadBitmap(item);
+        if (!item.bitmap || !item.aid) continue;
+        entries.push({ aid: item.aid, name: item.name, canvas: correctedCanvas(item) });
+      }
+      const { indexed, noFace } = await window.FaceMatch.indexCourse(ck, entries,
+        (i, total) => setLbl('👥 Faces ' + i + '/' + total + '…'));
+      const matches = await window.FaceMatch.findMatches(ck);
+      window.FaceMatch.saveFlags(ck, matches); // surfaced by the course-audit panel too
+      // Badge matched cards — best (closest) match per card, both sides of
+      // a within-course pair.
+      state.items.forEach(it => { it.dup = null; });
+      matches.forEach(m => {
+        const mine = state.items.find(x => x.aid === m.aid);
+        if (mine && (!mine.dup || m.dist < mine.dup.dist)) mine.dup = m;
+        if (m.withinCourse) {
+          const other = state.items.find(x => x.aid === m.otherAid);
+          if (other && (!other.dup || m.dist < other.dup.dist)) {
+            other.dup = { ...m, aid: m.otherAid, name: m.otherName, otherAid: m.aid, otherName: m.name };
+          }
+        }
+      });
+      state.items.forEach(it => { if (it.el) updateCard(it); });
+      const stats = await window.FaceMatch.indexStats();
+      if (matches.length) showDupSummary(matches, stats);
+      else toast('No matching faces — indexed ' + indexed + ' face(s)' +
+        (noFace ? ' (' + noFace + ' had no detectable face)' : '') +
+        ', compared across ' + stats.courses + ' stored course(s)');
+    } finally {
+      setLbl('👥 Duplicates');
+      state.scanning = false;
+    }
+  }
+
+  function showDupSummary(matches, stats) {
+    const ov = document.getElementById(OVERLAY_ID);
+    const modal = document.createElement('div');
+    modal.className = 'pr-modal';
+    const rows = matches.map(m => `<tr>
+      <td>${escHtml(m.name)}</td>
+      <td>${escHtml(m.otherName)}</td>
+      <td>${m.withinCourse ? 'this course' : escHtml(m.otherCourse)}</td>
+      <td>${m.dist} · ${m.tier === 'strong' ? '🔴 strong' : '🟠 possible'}</td>
+    </tr>`).join('');
+    modal.innerHTML = `
+      <div class="pr-modal-card">
+        <div class="pr-modal-title">👥 ${matches.length} face match(es) across ${stats.courses} stored course(s)</div>
+        <div class="pr-modal-warn">Face similarity is a lead, not proof — matches can be siblings, twins, or photo quirks. Verify against ID documents before acting. These flags also appear in the course-audit panel (Cross-course). All processing stayed in this browser.</div>
+        <div class="pr-modal-tablewrap"><table class="pr-modal-table"><tr><th>this course</th><th>matches</th><th>where</th><th>distance</th></tr>${rows}</table></div>
+        <div class="pr-modal-actions"><button class="pr-btn pr-btn-gray" data-x="close">Close</button></div>
+      </div>`;
+    ov.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.closest('[data-x]')) modal.remove();
+    });
+  }
+
   // ── Auto-fix: apply high-confidence corrections; suggest the rest ──
   // Only writes local corrections and never marks a card done — every auto fix
   // still needs a human ✓ (or a revert). Nothing is uploaded to dipi here.
@@ -1172,6 +1286,7 @@
         <button class="pr-btn pr-btn-blue" id="pr-scan">⚡ Auto-scan</button>
         <button class="pr-btn pr-btn-indigo" id="pr-autofix" title="Apply high-confidence rotation/crop fixes; each still needs your ✓">✨ Auto-fix</button>
         <button class="pr-btn pr-btn-gray" id="pr-boxes" title="Overlay the detected face box + area % on each photo (run Auto-scan first)">▦ Boxes</button>
+        <button class="pr-btn pr-btn-gray" id="pr-dedup" title="Match faces against other scanned courses to flag possible duplicate applications. Fully on-device; face signatures stay in this browser (last 12 courses, wiped by ♻ Reset local).">👥 Duplicates</button>
         <button class="pr-btn pr-btn-indigo" id="pr-ok-auto" title="Consent to every modification made so far (auto + manual): all corrected photos are marked ✓ fixed, ready for ⬆ Upload fixed to dipi">✓ Accept all fixes</button>
         <button class="pr-btn pr-btn-gray" id="pr-dl-all">⬇ Download fixed</button>
         <button class="pr-btn pr-btn-teal" id="pr-up-all">⬆ Upload fixed to dipi</button>
@@ -1205,6 +1320,7 @@
     ov.querySelector('#pr-close').addEventListener('click', close);
     ov.querySelector('#pr-scan')?.addEventListener('click', autoScan);
     ov.querySelector('#pr-autofix')?.addEventListener('click', autoFix);
+    ov.querySelector('#pr-dedup')?.addEventListener('click', findDuplicates);
     ov.querySelector('#pr-boxes')?.addEventListener('click', () => {
       state.showBoxes = !state.showBoxes;
       ov.querySelector('#pr-boxes').textContent = state.showBoxes ? '▦ Boxes ON' : '▦ Boxes';
