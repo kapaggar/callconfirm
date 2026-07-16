@@ -29,6 +29,7 @@ orientation.
 | `launcher.js` | All-in-one bookmarklet target (`bookmarklet-all.txt`); adds all 3 FAB buttons, tools load on demand |
 | `manifest.json` | Chrome extension (MV3) manifest — the repo root IS the extension (load unpacked) |
 | `extension-fab.js` | Extension content script (isolated world); injects the bundled tools into the page's MAIN world |
+| `background.js` | Extension service worker; letter-fetch bridge (l.php has no CORS headers, page fetch is blocked) |
 | `vendor/mediapipe/` | Self-hosted face-detection lib + model, pinned; hashes in its README |
 | `vendor/faceapi/` | Self-hosted face-recognition lib + weights (face-api.js, pinned) for 👥 Duplicates; hashes in its README |
 | `index.html` | Static landing page at github.io — signposts to the on-page inline tracker (no app/tracker code; retired the duplicate PWA tracker) |
@@ -60,6 +61,10 @@ orientation.
 - Centre ID `63` and status filter `Expected,Confirmed,WaitList,Review` are hardcoded in
   `scraper.js`. WaitList/Review rows are the backfill pool: the tracker keeps them out of the
   main queue/stats (🪑 pill) and offers same-group candidates when a seat is cancelled.
+- Personalized letters (l.php) can't be fetched by page JS — no CORS headers on
+  applicant.vridhamma.org. The tracker uses a postMessage bridge answered by the extension
+  background worker or Tampermonkey's GM_xmlhttpRequest; both allow-list the l.php URL.
+  See CALL-TRACKER-MEMORY.md → "DIPI letter system". Bookmarklet users get the generic fallback.
 - Applicant data is sensitive (names, phones, health disclosures). Keep everything client-side;
   nothing may leave the browser except explicit user actions (wa.me, exports).
 - 👥 Duplicates (photo-review/facematch.js) stores **face descriptors** — biometric-adjacent —

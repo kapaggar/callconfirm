@@ -171,6 +171,26 @@ Encryption uses Web Crypto API `crypto.subtle.encrypt({ name: 'AES-CBC', iv })`.
 
 After fetch, the HTML response is parsed via DOMParser, body innerText extracted, first 2 lines dropped (matches the `tail -n +3` in the original bash script).
 
+**CORS + the letter bridge (added 2026-07-16):** l.php sends no `Access-Control-Allow-Origin`
+header, so a plain page `fetch()` from dipi.vridhamma.org is blocked by the browser (the server
+responds 200 — verified with curl — but the page may not read the body; navigation to the URL is
+exempt, which is why manual tests always worked). The fetch therefore runs in a privileged
+context via a postMessage bridge:
+
+- Tracker side (`tracker-inline.js` → `fetchLetterHtml`): if `<html data-dipi-letter-bridge="1">`
+  is set, post `{__dipiLetter:'req', id, url}` to the window and await the matching
+  `{__dipiLetter:'res', id, ok, text|error}` (25 s timeout); otherwise fall back to direct fetch
+  (bookmarklet path — fails fast into the generic Hindi template).
+- Extension (`extension-fab.js` isolated world): relays the request to `background.js`
+  (MV3 service worker), whose fetch is exempted by `host_permissions:
+  ["https://applicant.vridhamma.org/*"]`.
+- Tampermonkey (`scraper.user.js`): `GM_xmlhttpRequest` with `@connect applicant.vridhamma.org`.
+  Note the shell now uses grants, which activates TM's sandbox — page globals (jQuery,
+  `_DIPI_TRACKER_BASE`) are accessed through `unsafeWindow`.
+
+Both privileged sides allow-list the URL (`^https://applicant.vridhamma.org/l.php?a=`) so the
+bridge cannot be used as a generic fetch proxy by other page scripts.
+
 ---
 
 ## DIPI status change endpoint

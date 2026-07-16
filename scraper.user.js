@@ -1,14 +1,16 @@
 // ==UserScript==
 // @name         DIPI Call Tracker
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.6.0
+// @version      1.7.0
 // @description  Scrape applicants from dipi.vridhamma.org and run an inline call tracker. Adds a floating button to /search-course/ and /centre/ pages.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
 // @match        https://dipi.vridhamma.org/centre/*
 // @match        https://*.vridhamma.org/search-course/*
 // @match        https://*.vridhamma.org/centre/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      applicant.vridhamma.org
 // @run-at       document-idle
 // @updateURL    https://kapaggar.github.io/callconfirm/scraper.user.js
 // @downloadURL  https://kapaggar.github.io/callconfirm/scraper.user.js
@@ -21,11 +23,15 @@
 
   var AUTORUN_KEY  = 'dipiTracker.autorun';
 
+  // @grant activates the Tampermonkey sandbox: page globals (jQuery,
+  // _DIPI_TRACKER_BASE) live on unsafeWindow, not the sandbox window.
+  var pageWin = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
+
   function injectScraper() {
     // Tear down any existing scraper overlay first
     var old = document.getElementById('_ds');
     if (old) old.remove();
-    window._DIPI_TRACKER_BASE = 'https://kapaggar.github.io/callconfirm';
+    pageWin._DIPI_TRACKER_BASE = 'https://kapaggar.github.io/callconfirm';
     var s = document.createElement('script');
     s.src = SCRAPER_URL + '?v=' + Date.now();
     s.onerror = function () { console.error('[dipi-tracker] failed to load scraper.js'); };
@@ -44,7 +50,7 @@
       var t0 = Date.now();
       (function tick() {
         try {
-          var $ = window.jQuery || window.$;
+          var $ = pageWin.jQuery || pageWin.$;
           if ($ && $.fn && $.fn.DataTable && $.fn.DataTable.isDataTable) {
             var $tbl = $('#table-applicants').length ? $('#table-applicants') : $('table.dataTable');
             if ($tbl.length && $.fn.DataTable.isDataTable($tbl)) { resolve(); return; }
@@ -115,6 +121,38 @@
       'font-size:13px', 'font-weight:600',
       'box-shadow:0 2px 8px rgba(0,0,0,.3)', 'min-width:140px', 'text-align:center'
     ].join(';');
+  }
+
+  // ---- Letter-fetch bridge ----
+  // l.php (applicant.vridhamma.org) sends no CORS headers, so the injected
+  // tracker can't read it with fetch(). It posts {__dipiLetter:'req'} instead;
+  // GM_xmlhttpRequest (with @connect) fetches outside the page's CORS rules
+  // and the letter HTML is posted back. The dataset flag advertises the
+  // bridge to tracker-inline.js fetchLetterHtml().
+  if (typeof GM_xmlhttpRequest === 'function') {
+    document.documentElement.dataset.dipiLetterBridge = '1';
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (e.origin !== location.origin || !d || d.__dipiLetter !== 'req') return;
+      function answer(ok, text, error) {
+        pageWin.postMessage({ __dipiLetter: 'res', id: d.id, ok: ok, text: text, error: error }, location.origin);
+      }
+      if (!/^https:\/\/applicant\.vridhamma\.org\/l\.php\?a=/.test(d.url || '')) {
+        answer(false, undefined, 'URL not allowed');
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: d.url,
+        timeout: 20000,
+        onload: function (r) {
+          if (r.status >= 200 && r.status < 300) answer(true, r.responseText);
+          else answer(false, undefined, 'HTTP ' + r.status);
+        },
+        onerror: function () { answer(false, undefined, 'network error'); },
+        ontimeout: function () { answer(false, undefined, 'timeout'); },
+      });
+    });
   }
 
   // ---- Run ----

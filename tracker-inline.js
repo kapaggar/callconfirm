@@ -102,14 +102,43 @@
     const b1 = btoa(String.fromCharCode(...new Uint8Array(encrypted)));
     return btoa(b1);
   }
+  // l.php sends no CORS headers, so a page fetch from dipi.vridhamma.org is
+  // blocked by the browser. Privileged shells (extension background worker /
+  // Tampermonkey GM_xmlhttpRequest) advertise a bridge via
+  // <html data-dipi-letter-bridge="1"> and answer {__dipiLetter} postMessages.
+  // Without a bridge (bookmarklet) the direct fetch is attempted anyway and
+  // fails fast into the generic-template fallback.
+  function fetchLetterHtml(url) {
+    if (document.documentElement.dataset.dipiLetterBridge !== '1') {
+      return fetch(url, { mode: 'cors' }).then(resp => {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.text();
+      });
+    }
+    return new Promise((resolve, reject) => {
+      const id = 'lt' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        window.removeEventListener('message', onMsg);
+        reject(new Error('bridge timeout'));
+      }, 25000);
+      function onMsg(e) {
+        const d = e.data;
+        if (e.origin !== location.origin || !d || d.__dipiLetter !== 'res' || d.id !== id) return;
+        clearTimeout(timer);
+        window.removeEventListener('message', onMsg);
+        if (d.ok) resolve(d.text);
+        else reject(new Error(d.error || 'bridge fetch failed'));
+      }
+      window.addEventListener('message', onMsg);
+      window.postMessage({ __dipiLetter: 'req', id, url }, location.origin);
+    });
+  }
   async function fetchPersonalizedMessage(aid) {
     if (!aid) return null;
     try {
       const authCode = await computeAuthCode(aid);
       const url = LETTER_BASE_URL + encodeURIComponent(authCode);
-      const resp = await fetch(url, { mode: 'cors' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const html = await resp.text();
+      const html = await fetchLetterHtml(url);
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       doc.querySelectorAll('script, style, head').forEach(el => el.remove());
