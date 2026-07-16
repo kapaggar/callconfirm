@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dipi.vridhamma.org Course Audit
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.2.3
+// @version      1.2.4
 // @description  Course audit overlay for dipi.vridhamma.org applicants pages. Adds a floating ↻ Audit button; runs on click (auto-run opt-in via localStorage.courseAudit.autorun).
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
