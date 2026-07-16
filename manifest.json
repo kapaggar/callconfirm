@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "DIPI Tools (Audit / Scrape / Photos)",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Audit, Scrape and Photos tools for dipi.vridhamma.org course admin volunteers. All data stays in the browser.",
   "homepage_url": "https://github.com/kapaggar/callconfirm",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": ["https://applicant.vridhamma.org/*"],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

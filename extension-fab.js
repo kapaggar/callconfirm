@@ -68,6 +68,23 @@
     });
   }
 
+  // ---------- Letter-fetch bridge ----------
+  // l.php (applicant.vridhamma.org) sends no CORS headers, so the MAIN-world
+  // tracker can't read it with fetch(). It posts {__dipiLetter:'req'} instead;
+  // we relay to the background service worker (whose fetch host_permissions
+  // exempts from page CORS) and post the letter HTML back. The dataset flag
+  // advertises the bridge to tracker-inline.js fetchLetterHtml().
+  document.documentElement.dataset.dipiLetterBridge = '1';
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (e.source !== window || !d || d.__dipiLetter !== 'req') return;
+    chrome.runtime.sendMessage({ type: 'dipi-letter-fetch', url: d.url }, function (resp) {
+      if (chrome.runtime.lastError) resp = { ok: false, error: chrome.runtime.lastError.message };
+      resp = resp || { ok: false, error: 'no response from background' };
+      window.postMessage({ __dipiLetter: 'res', id: d.id, ok: !!resp.ok, text: resp.text, error: resp.error }, location.origin);
+    });
+  });
+
   // ---------- Shared FAB stack (same convention/ids as the other shells) ----------
   function getFabStack() {
     var stack = document.getElementById('dipi-fab-stack');
