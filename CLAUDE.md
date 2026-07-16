@@ -16,7 +16,8 @@ have no automated tests.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
 DIPI endpoint captures, data model, decisions, roadmap). `course-audit/README.md` covers the
-audit side. This file is only the quick orientation.
+audit side. `TODO.md` is the prioritized feature backlog. This file is only the quick
+orientation.
 
 ## Layout
 

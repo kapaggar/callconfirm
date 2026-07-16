@@ -423,6 +423,9 @@ Page UI driving (programmatically select + click Update) requires the row to be 
 
 ## Things NOT yet implemented (roadmap)
 
+> Superseded by [`TODO.md`](TODO.md) (prioritized, with requirement/impact/effort
+> per item — 2026-07-16). This raw list is kept for history; add new ideas there.
+
 - Bulk dipi status change (e.g. "mark all No-Answer applicants as Cancelled in dipi")
 - Two-way sync: when tracker call-status hits "Confirmed", offer to also flip dipi status
 - Background letter pre-fetch for all pending applicants (cache letters before calling)
