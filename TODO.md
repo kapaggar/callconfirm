@@ -14,7 +14,7 @@ Risk = chance of breaking something that already works (write paths, merges).
 
 ## P1 — build next
 
-### 1. Reconfirmation countdown ("T-minus" view)
+### 1. Reconfirmation countdown ("T-minus" view) — ✅ SHIPPED 2026-07-16
 - **Requirement:** Tracker header shows "course starts in N days — reconfirm
   deadline (T-14/T-21) in M days"; pending queue sorts not-yet-confirmed
   applicants to the top as the deadline nears; deadline offset configurable

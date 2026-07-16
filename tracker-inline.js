@@ -10,10 +10,10 @@
 //
 // Storage: IndexedDB at the dipi.vridhamma.org origin (separate from PWA storage).
 // ═══════════════════════════════════════════════════════════════
-(function () {
+(function (root) {
   'use strict';
 
-  if (window.DipiTracker) return; // idempotent
+  if (root.DipiTracker) return; // idempotent
 
   const STATUSES = {
     pending:      { label: 'Pending',    icon: '⏳', color: '#94a3b8', bg: '#f1f5f9' },
@@ -195,6 +195,60 @@
     const h = Math.floor(m / 60);
     if (h < 24) return h + 'h ago';
     return Math.floor(h / 24) + 'd ago';
+  }
+
+  // ── Reconfirmation countdown (T-minus) ──
+  // Centres auto-cancel seats not reconfirmed ~2-3 weeks before start, so the
+  // header shows days-to-start and days-to-deadline, and a priority sort
+  // floats still-to-reach applicants to the top. Offset (T-N) is clickable
+  // (7/14/21) and persisted; centres differ.
+  const RECONFIRM_KEY = 'dipiTracker.reconfirmDays';
+  const SORT_KEY = 'dipiTracker.prioritySort';
+  const reconfirmDays = () => {
+    const n = parseInt(localStorage.getItem(RECONFIRM_KEY) || '14', 10);
+    return [7, 14, 21].includes(n) ? n : 14;
+  };
+  const prioritySortOn = () => localStorage.getItem(SORT_KEY) !== 'false'; // default on
+
+  // Parse the course start from the scraper's dates string, e.g.
+  // "30th-Jul to 2nd-Aug 2026" (year present when the scraper found one).
+  // Returns a Date at local midnight or null. Without a year, dates more than
+  // ~2 months past are assumed to be next year's course. (pure)
+  function parseCourseStart(dates, now = new Date()) {
+    const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+    const s = String(dates || '');
+    // First day-month pair with a REAL month wins — titles like
+    // "3 Day / 2026 / 30th-Jul…" must skip the "3 Day" pseudo-match.
+    for (const m of s.matchAll(/(\d{1,2})(?:st|nd|rd|th)?[-\s]+([A-Za-z]{3})/g)) {
+      const mon = MONTHS[m[2].toLowerCase()];
+      if (mon === undefined) continue;
+      const ym = s.match(/\b(20\d{2})\b/);
+      let d = new Date(ym ? parseInt(ym[1], 10) : now.getFullYear(), mon, parseInt(m[1], 10));
+      if (!ym && (now - d) > 60 * 86400000) d = new Date(d.getFullYear() + 1, mon, parseInt(m[1], 10));
+      return isNaN(d) ? null : d;
+    }
+    return null;
+  }
+
+  // Countdown facts for the header chip. (pure)
+  function deadlineInfo(start, offsetDays, now = new Date()) {
+    if (!start) return null;
+    const mid = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const daysToStart = Math.round((mid(start) - mid(now)) / 86400000);
+    const daysToDeadline = daysToStart - offsetDays;
+    return {
+      daysToStart, daysToDeadline,
+      level: daysToStart < 0 ? 'past'
+        : daysToDeadline < 0 ? 'over'
+        : daysToDeadline <= 3 ? 'urgent'
+        : daysToDeadline <= 7 ? 'soon' : 'ok',
+    };
+  }
+
+  // Call-priority rank: lower = call first. (pure)
+  const PRIORITY = { pending: 0, callback: 1, no_answer: 2, tentative: 3, left_message: 4, confirmed: 5, cancelled: 6 };
+  function priorityRank(a) {
+    return PRIORITY[a.status] !== undefined ? PRIORITY[a.status] : 3;
   }
 
   // ── Session index (synchronous lookup for scraper) ──
@@ -430,6 +484,14 @@
       #${OVERLAY_ID} .dt-btn-blue { background:#3f65a7; color:#fff; }
       #${OVERLAY_ID} .dt-btn-gray { background:rgba(148,163,184,.12); border-color:#475569; color:#cbd5e1; }
       #${OVERLAY_ID} .dt-btn-red  { background:transparent; border-color:#5f4444; color:#cf8d8d; }
+      #${OVERLAY_ID} .dt-tminus { display:inline-block; margin-top:8px; padding:5px 10px; border-radius:6px;
+        font-size:11px; font-weight:600; cursor:pointer; user-select:none;
+        background:rgba(148,163,184,.12); border:1px solid #475569; color:#cbd5e1; }
+      #${OVERLAY_ID} .dt-tminus.soon   { border-color:#8a6d3b; color:#d9b97a; background:rgba(185,135,61,.12); }
+      #${OVERLAY_ID} .dt-tminus.urgent { border-color:#8a4b4b; color:#e0a0a0; background:rgba(179,95,95,.14); }
+      #${OVERLAY_ID} .dt-tminus.over   { border-color:#8a4b4b; color:#e8b4b4; background:rgba(179,95,95,.22); }
+      #${OVERLAY_ID} .dt-tminus.past   { border-color:#475569; color:#8b96a5; background:transparent; }
+      #${OVERLAY_ID} .dt-sort-pill { border:1px dashed #64748b; }
       #${OVERLAY_ID} .dt-stats { display:flex; gap:6px; margin-top:10px; overflow-x:auto; padding-bottom:2px; }
       #${OVERLAY_ID} .dt-pill { padding:4px 10px; border-radius:20px; border:none; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; }
       #${OVERLAY_ID} .dt-pill.active { background:rgba(255,255,255,.18); color:#e8edf3; }
@@ -522,6 +584,22 @@
       if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
+    // Priority sort: still-to-reach first (pending → callback → no-answer …),
+    // alphabetical within a rank (A is already name-sorted, sort is stable).
+    if (prioritySortOn()) filtered.sort((a, b) => priorityRank(a) - priorityRank(b));
+
+    // Reconfirmation countdown chip
+    const rDays = reconfirmDays();
+    const cd = deadlineInfo(parseCourseStart(courseDates || courseTitle), rDays);
+    const tminusHTML = cd ? (() => {
+      const txt = cd.daysToStart < 0 ? 'Course started ' + (-cd.daysToStart) + 'd ago'
+        : cd.daysToStart === 0 ? '🏁 Course starts TODAY · ' + pending + ' to reach'
+        : 'Starts in ' + cd.daysToStart + 'd · reconfirm deadline (T-' + rDays + ') ' +
+          (cd.daysToDeadline > 0 ? 'in ' + cd.daysToDeadline + 'd'
+            : cd.daysToDeadline === 0 ? 'TODAY' : (-cd.daysToDeadline) + 'd overdue') +
+          ' · ' + pending + ' to reach';
+      return `<div class="dt-tminus ${cd.level}" id="dt-tminus" title="Centres auto-cancel seats not reconfirmed ~2–3 weeks before start. Click to switch the deadline offset (7/14/21 days).">⏳ ${txt}</div>`;
+    })() : '';
 
     const statPills = [`<button class="dt-pill ${filter==='all'?'active':''}" data-flt="all">All ${A.length}</button>`];
     Object.entries(STATUSES).forEach(([k,v]) => {
@@ -603,8 +681,9 @@
           <button id="dt-exp-pdf">🖨️ Print / PDF</button>
           <button id="dt-exp-aid">📤 AID:Phone for script</button>
         </div>` : ''}
+        ${tminusHTML}
         ${Object.keys(groupStats).length ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join('')}</div>` : ''}
-        <div class="dt-stats">${statPills.join('')}</div>
+        <div class="dt-stats"><button class="dt-pill dt-sort-pill" id="dt-sort-pill" title="Toggle list order: priority floats still-to-reach applicants (pending / callback / no-answer) to the top">${prioritySortOn() ? '⏳ Priority' : 'A–Z'}</button>${statPills.join('')}</div>
         <div class="dt-search"><input type="text" placeholder="🔍 Search by name..." value="${escHtml(search)}" id="dt-search-box"></div>
       </div>
       <div class="dt-list">${cards.length ? cards : '<div class="dt-empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
@@ -621,6 +700,16 @@
       closeTracker();
       if (window.DipiScraper && window.DipiScraper.run) window.DipiScraper.run();
       else showToast('Run scraper bookmarklet again');
+    });
+    ov.querySelector('#dt-tminus')?.addEventListener('click', () => {
+      const next = { 7: 14, 14: 21, 21: 7 }[reconfirmDays()];
+      localStorage.setItem(RECONFIRM_KEY, String(next));
+      render();
+      showToast('Reconfirm deadline set to T-' + next);
+    });
+    ov.querySelector('#dt-sort-pill')?.addEventListener('click', () => {
+      localStorage.setItem(SORT_KEY, prioritySortOn() ? 'false' : 'true');
+      render();
     });
     ov.querySelector('#dt-search-box')?.addEventListener('input', e => { state.search = e.target.value; render(); });
     ov.querySelectorAll('[data-flt]').forEach(b => b.addEventListener('click', () => {
@@ -735,5 +824,8 @@
     await importApps(apps, title, dates, courseType);
   }
 
-  window.DipiTracker = { open, import: importPublic, close: closeTracker };
-})();
+  root.DipiTracker = {
+    open, import: importPublic, close: closeTracker,
+    _internal: { parseCourseStart, deadlineInfo, priorityRank }, // pure, for tests
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
