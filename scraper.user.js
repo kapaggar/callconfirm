@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DIPI Call Tracker
 // @namespace    https://github.com/kapaggar/callconfirm
-// @version      1.3.1
+// @version      1.3.2
 // @description  Scrape applicants from dipi.vridhamma.org and run an inline call tracker. Adds a floating button to /search-course/ and /centre/ pages.
 // @author       Kapil Aggarwal
 // @match        https://dipi.vridhamma.org/search-course/*
@@ -25,7 +25,6 @@
     // Tear down any existing scraper overlay first
     var old = document.getElementById('_ds');
     if (old) old.remove();
-    window._DIPI_PWA_URL = 'https://kapaggar.github.io/callconfirm';
     window._DIPI_TRACKER_BASE = 'https://kapaggar.github.io/callconfirm';
     var s = document.createElement('script');
     s.src = SCRAPER_URL + '?v=' + Date.now();

@@ -23,8 +23,8 @@ audit side. This file is only the quick orientation.
 | `manifest.json` | Chrome extension (MV3) manifest — the repo root IS the extension (load unpacked) |
 | `extension-fab.js` | Extension content script (isolated world); injects the bundled tools into the page's MAIN world |
 | `vendor/mediapipe/` | Self-hosted face-detection lib + model, pinned; hashes in its README |
-| `index.html` | Legacy PWA fallback at github.io; duplicates the tracker UI code |
-| `sw.js`, `manifest.webmanifest`, `setup.html` | PWA plumbing for the fallback (`manifest.json` now belongs to the extension) |
+| `index.html` | Static landing page at github.io — signposts to the on-page inline tracker (no app/tracker code; retired the duplicate PWA tracker) |
+| `sw.js`, `manifest.webmanifest`, `setup.html` | PWA plumbing for the landing page (`manifest.json` now belongs to the extension) |
 | `course-audit/` | Separate rule-engine + panel (audit.js / loader.js / userscript.user.js) |
 | `photo-review/` | Applicant photo rotate/crop overlay, local-only (review.js / userscript.user.js) |
 
@@ -38,7 +38,9 @@ audit side. This file is only the quick orientation.
   the cache-busted logic file changed) so Tampermonkey users see the update. Mapping:
   scraper/tracker (`scraper.js`, `tracker-inline.js`) → `scraper.user.js`;
   audit → `course-audit/userscript.user.js`; photos → `photo-review/userscript.user.js`.
-- Changes to tracker UI logic usually need mirroring in `index.html` (same code, PWA copy).
+- `tracker-inline.js` is the single copy of the call tracker. `index.html` is now
+  just a static signpost — do NOT re-add tracker logic to it. (`setup.html` still
+  carries a legacy standalone bookmarklet that references the retired PWA route.)
 - All userscripts share the `#dipi-fab-stack` FAB convention (`data-order`: audit 10, scrape 20, photos 30).
 - The Chrome extension shares the same tool files (single source of truth) and dedupes FAB
   buttons by DOM id, but don't run the Tampermonkey shells and the extension in one profile —

@@ -75,7 +75,6 @@
     makeBtn('dl-scrape-btn', '📥 Scrape', 'Scrape applicants / open the call tracker', 20, function () {
       var old = document.getElementById('_ds');
       if (old) old.remove();
-      window._DIPI_PWA_URL = BASE;
       window._DIPI_TRACKER_BASE = BASE;
       inject('/scraper.js');
     });

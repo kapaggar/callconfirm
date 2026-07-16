@@ -27,10 +27,10 @@ tracker-inline.js      ← Calling dashboard overlay
 scraper.user.js        ← Tampermonkey shell (scraper/tracker)
 course-audit/          ← Audit rule engine + panel + shell
 photo-review/          ← Photo review overlay + shell
-index.html             ← Legacy PWA fallback (github.io)
+index.html             ← Static landing page (github.io) → points to the on-page tracker
 setup.html             ← One-time bookmarklet installer
 manifest.webmanifest   ← PWA config (renamed; manifest.json is the extension's)
-sw.js                  ← PWA offline support
+sw.js                  ← Landing-page offline support (network-first)
 ```
 
 ## Deploy

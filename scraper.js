@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
 // DIPI Scraper v7
 // - Same DataTables scraping logic as v6
-// - Primary action: load the inline tracker on the dipi page (no nav)
-// - Secondary: open in the hosted PWA (original v6 behavior)
+// - Loads the inline tracker on the dipi page (no nav). The old "Open in
+//   PWA" route was removed when the hosted tracker was retired.
 // - Exposes window.DipiScraper.run() for the inline tracker's Re-scrape
 // ═══════════════════════════════════════════════════════════════
 (function () {
@@ -15,15 +15,9 @@
   // Base for loading tracker-inline.js: explicit global (bookmarklet/userscript)
   // wins, else derive from this script's own URL (works for the web-hosted AND the
   // chrome-extension:// copy — must run synchronously; currentScript is null
-  // later). No hardcoded URLs anywhere in this file (Web Store remote-code
-  // policy). PWA = where the hosted web app lives: the global if set, else
-  // SELF_BASE when it's a real web origin. From the extension SELF_BASE is
-  // chrome-extension:// (index.html isn't packaged), so PWA is '' and the
-  // "Open in PWA" button is not rendered.
+  // later). No hardcoded URLs anywhere in this file (Web Store remote-code policy).
   var SELF_BASE = (document.currentScript && document.currentScript.src)
     ? new URL('.', document.currentScript.src).href.replace(/\/+$/, '') : null;
-  var PWA = window._DIPI_PWA_URL ||
-    ((SELF_BASE && SELF_BASE.indexOf('http') === 0) ? SELF_BASE : '');
   // No hardcoded fallback URL here: MV3 forbids remotely hosted code, and the
   // Web Store rejected the package for exactly that (a remote literal next to
   // script injection). Every load path provides a base — bookmarklet/userscript/
@@ -309,7 +303,6 @@
       bdg('NF', g.NF) + bdg('OF', g.OF) + bdg('SF', g.SF) +
       '</div>' +
       B('_ds-inline', '#3f65a7', primaryLabel) +
-      (PWA ? B('_ds-t', 'rgba(148,163,184,.12)', '\u{1F4F1} Open in PWA', '#cbd5e1', '1px solid #475569') : '') +
       B('_ds-cp',     'rgba(148,163,184,.12)', '\u{1F4CB} Copy Data', '#cbd5e1', '1px solid #475569') +
       B('_ds-csv',    'rgba(148,163,184,.12)', '\u{1F4CA} Download CSV', '#cbd5e1', '1px solid #475569') +
       B('_ds-aid',    'rgba(148,163,184,.12)', '\u{1F4E4} Export AID:Phone (for script)', '#cbd5e1', '1px solid #475569') +
@@ -326,14 +319,6 @@
           alert('Inline tracker import failed: ' + err.message);
         });
       });
-    };
-
-    // SECONDARY: PWA route (original v6 behaviour); button absent when no web base
-    var pwaBtn = document.getElementById('_ds-t');
-    if (pwaBtn) pwaBtn.onclick = function () {
-      var data = { apps: apps, title: cleanTitle, dates: dates, courseType: courseType };
-      var enc = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-      window.open(PWA + '/index.html#dipi=' + enc, '_blank');
     };
 
     document.getElementById('_ds-cp').onclick = function () {
