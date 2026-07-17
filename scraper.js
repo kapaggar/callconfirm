@@ -140,6 +140,26 @@
   // PHASE 2: Scrape (batch expand)
   // ═════════════════════════════════════
   function runScraper() {
+    // The DataTable only holds rows matching the page URL's ?s= status filter.
+    // A page loaded with an older/narrower filter (pre-pool bookmark) has no
+    // WaitList/Review rows, and the session merge replaces applicants
+    // wholesale — scraping it would silently drop the whole pool. Reload the
+    // same course with the full filter instead (_ds_auto resumes the scrape);
+    // the retry flag stops a loop if dipi ever strips the param.
+    var idm = window.location.pathname.match(/\/search-course\/\d+\/(\d+)/);
+    var curFilter = new URLSearchParams(window.location.search).get('s') || '';
+    var missing = STATUS_FILTER.split(',').filter(function (s) {
+      return curFilter.toLowerCase().indexOf(s.toLowerCase()) === -1;
+    });
+    if (missing.length && idm && !sessionStorage.getItem('_ds_flt_retry')) {
+      sessionStorage.setItem('_ds_flt_retry', '1');
+      msg('Page filter is missing ' + missing.join(', ') + ' — reloading with the full status filter...');
+      goTo(idm[1]);
+      return;
+    }
+    sessionStorage.removeItem('_ds_flt_retry');
+    if (missing.length) msg('Warning: page filter still missing ' + missing.join(', ') + ' — pool may be incomplete');
+
     var title = '', dates = '', courseType = '';
     var backLink = document.querySelector('a[href^="/course/' + CID + '/"]');
     if (backLink) title = backLink.textContent.trim();

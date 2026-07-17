@@ -164,7 +164,7 @@ test('backfillCandidates: same group only, called-off excluded, pending first, c
   const pool = (o) => ({ status: 'pending', dipiStatus: 'WaitList (NM9)', group: 'NM', mobile: '+919000000000', ...o });
   const applicants = [
     cancelled,
-    pool({ name: 'D Confirmed-already', status: 'confirmed' }),   // reached, ranks after pending
+    pool({ name: 'D Confirmed-already', status: 'confirmed' }),   // excluded: already given a seat
     pool({ name: 'A Wrong-group', group: 'NF' }),                 // excluded: gender balance
     pool({ name: 'C Declined', status: 'cancelled' }),            // excluded: called off
     pool({ name: 'B Pending' }),
@@ -175,6 +175,14 @@ test('backfillCandidates: same group only, called-off excluded, pending first, c
   const c = backfillCandidates(applicants, cancelled);
   assert.strictEqual(c.length, 3); // capped
   assert.deepStrictEqual(c.map(x => x.name), ['B Pending', 'E Pending', 'F Pending']);
+});
+
+test('backfillCandidates: confirmed pool members are never re-offered', () => {
+  const cancelled = { name: 'Gone', group: 'OF', status: 'cancelled' };
+  const applicants = [
+    { name: 'Took a seat already', group: 'OF', status: 'confirmed', dipiStatus: 'WaitList (OF1)' },
+  ];
+  assert.deepStrictEqual(backfillCandidates(applicants, cancelled), []);
 });
 
 test('backfillCandidates: cancelled row without a group matches any pool group', () => {
