@@ -160,6 +160,19 @@
       return null;
     }
   }
+  // Where 💬 opens WhatsApp: 'app' deep-links into the native desktop app
+  // (whatsapp://send — same scheme as the improved_aid.sh bulk script) so no
+  // browser tab is involved; 'web' keeps the old wa.me tab. Header pill toggles.
+  const WA_MODE_KEY = 'dipiTracker.waMode';
+  function waMode() { return localStorage.getItem(WA_MODE_KEY) === 'web' ? 'web' : 'app'; }
+  function openWa(phone, text) {
+    if (/^[0-9]{10}$/.test(phone)) phone = '91' + phone; // bare 10-digit → assume India
+    if (waMode() === 'app') {
+      location.href = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(text);
+    } else {
+      window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(text), '_blank');
+    }
+  }
   async function sendWhatsAppForApplicant(appId) {
     const a = state.applicants.find(x => x.id === appId);
     if (!a) return;
@@ -170,13 +183,13 @@
       showToast('Fetching letter for ' + a.name.split(' ')[0] + '...');
       const letter = await fetchPersonalizedMessage(a.aid);
       if (letter) {
-        window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(letter), '_blank');
+        openWa(phone, letter);
         showToast('Personalized message ready!');
         return;
       }
     }
     const fallback = 'नमस्ते ' + a.name.split(' ')[0] + ' जी, आपका विपश्यना ' + (state.courseType || '') + ' शिविर ' + (state.courseDates || '') + ' को धम्म सुधा में है। कृपया अपनी उपस्थिति की पुष्टि करें। धन्यवाद।';
-    window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(fallback), '_blank');
+    openWa(phone, fallback);
     showToast(a.aid ? 'Letter fetch failed — sent generic' : 'No AID — sent generic');
   }
 
@@ -872,7 +885,7 @@
         </div>` : ''}
         ${tminusHTML}
         ${Object.keys(groupStats).length ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join('')}</div>` : ''}
-        <div class="dt-stats"><button class="dt-pill dt-sort-pill" id="dt-sort-pill" title="Toggle list order: priority floats still-to-reach applicants (pending / callback / no-answer) to the top">${prioritySortOn() ? '⏳ Priority' : 'A–Z'}</button>${statPills.join('')}</div>
+        <div class="dt-stats"><button class="dt-pill dt-sort-pill" id="dt-sort-pill" title="Toggle list order: priority floats still-to-reach applicants (pending / callback / no-answer) to the top">${prioritySortOn() ? '⏳ Priority' : 'A–Z'}</button><button class="dt-pill dt-sort-pill" id="dt-wa-pill" title="Where 💬 opens WhatsApp: App = native desktop app (no browser tab), Web = wa.me tab">${waMode() === 'app' ? '💬 App' : '💬 Web'}</button>${statPills.join('')}</div>
         <div class="dt-search"><input type="text" placeholder="🔍 Search by name..." value="${escHtml(search)}" id="dt-search-box"></div>
       </div>
       <div class="dt-list">${cards.length ? cards : '<div class="dt-empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
@@ -901,6 +914,11 @@
     ov.querySelector('#dt-sort-pill')?.addEventListener('click', () => {
       localStorage.setItem(SORT_KEY, prioritySortOn() ? 'false' : 'true');
       render();
+    });
+    ov.querySelector('#dt-wa-pill')?.addEventListener('click', () => {
+      localStorage.setItem(WA_MODE_KEY, waMode() === 'app' ? 'web' : 'app');
+      render();
+      showToast(waMode() === 'app' ? '💬 opens the WhatsApp app' : '💬 opens wa.me in browser');
     });
     ov.querySelector('#dt-search-box')?.addEventListener('input', e => { state.search = e.target.value; render(); });
     ov.querySelectorAll('[data-flt]').forEach(b => b.addEventListener('click', () => {
