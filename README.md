@@ -59,7 +59,7 @@ Push to `main` — GitHub Pages serves the repo at
 
 ## Setup (one-time)
 
-Two options:
+Three options:
 
 - **Bookmarklet (works everywhere, incl. iPhone Safari):** open
   `https://kapaggar.github.io/callconfirm/setup.html` and copy the
