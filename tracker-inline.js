@@ -313,11 +313,12 @@
 
   // Backfill candidates for a freed seat: pool members of the same group
   // (gender balance — NM can only replace NM etc.; no group on the cancelled
-  // row matches anyone), excluding candidates already called off (cancelled),
+  // row matches anyone), excluding candidates already called off (cancelled)
+  // or already given a seat (confirmed — offering twice double-books),
   // ordered still-to-reach first then by name, capped. (pure)
   function backfillCandidates(applicants, cancelled, max = 3) {
     return (applicants || [])
-      .filter(a => isPool(a) && a.status !== 'cancelled' &&
+      .filter(a => isPool(a) && a.status !== 'cancelled' && a.status !== 'confirmed' &&
         (!cancelled.group || a.group === cancelled.group))
       .sort((a, b) => (priorityRank(a) - priorityRank(b)) ||
         (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' }))
