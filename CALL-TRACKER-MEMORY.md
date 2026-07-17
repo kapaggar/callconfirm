@@ -140,7 +140,7 @@ Status filter is hardcoded to `Expected,Confirmed,WaitList,Review` in the URL th
 When a card is expanded:
 
 1. **Phone buttons** — `tel:` links, increment attempts on click
-2. **WhatsApp button** — fetches DIPI's personalized letter via `applicant.vridhamma.org/l.php?a={authCode}`, then opens `wa.me/<phone>?text=<letter>`. Falls back to a generic Hindi template if AID missing or fetch fails.
+2. **WhatsApp button** — fetches DIPI's personalized letter via `applicant.vridhamma.org/l.php?a={authCode}`, then opens WhatsApp with the letter pre-filled. Default is the native desktop app (`whatsapp://send?...`, same scheme as the improved_aid.sh bulk script — no browser tab); a `💬 App / 💬 Web` header pill (`localStorage.dipiTracker.waMode`) switches back to a `wa.me` tab. Bare 10-digit numbers get a `91` country-code prefix. Falls back to a generic Hindi template if AID missing or fetch fails. Actually pressing send stays manual — a page can deep-link into the app but cannot keystroke it; full hands-off bulk sending remains the Automator-workflow script's job, fed by the "AID:Phone for script" export.
 3. **Dipi status changer** — dropdown + Update button. Calls `GET /change-status/{aid}?s={NewStatus}&l=&c={custom}`. Updates `a.dipiStatus` on success.
 4. **Call-status grid** — sets the tracker's own status (Pending / Confirmed / Cancelled / No Answer / Callback / Tentative / Left Msg). Independent of dipi status.
 5. **Notes textarea** — saved on every input
