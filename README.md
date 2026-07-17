@@ -20,8 +20,10 @@ Architecture and hand-off notes: `CALL-TRACKER-MEMORY.md` (read this first when 
 launcher.js            ← All-in-one bookmarklet target: adds 🔍 📥 📷 buttons
 bookmarklet-all.txt    ← The all-in-one bookmarklet (drag to bookmarks bar)
 manifest.json          ← Chrome extension (MV3) manifest — repo root IS the extension
-extension-fab.js       ← Extension content script (same FAB buttons)
+extension-fab.js       ← Extension content script (same FAB buttons + letter bridge relay)
+background.js          ← Extension service worker: fetches personalized letters (host lacks CORS headers)
 vendor/mediapipe/      ← Self-hosted face-detection lib + model (pinned, ~18 MB)
+vendor/faceapi/        ← Self-hosted face-recognition lib + weights (👥 cross-course duplicates)
 scraper.js             ← DIPI scraper (course picker + applicant scrape)
 tracker-inline.js      ← Calling dashboard overlay
 scraper.user.js        ← Tampermonkey shell (scraper/tracker)
@@ -31,20 +33,23 @@ index.html             ← Static landing page (github.io) → points to the on-
 setup.html             ← One-time bookmarklet installer
 manifest.webmanifest   ← PWA config (renamed; manifest.json is the extension's)
 sw.js                  ← Landing-page offline support (network-first)
-test/                  ← Unit tests for the audit rule engine (node --test)
+test/                  ← Unit tests: audit rules, tracker helpers, face-match math (node --test)
+TODO.md                ← Prioritized feature backlog
 ```
 
 ## Tests
 
-The `course-audit` rule engine is pure JS, so it has unit tests (zero-dependency
-`node:test`):
+The pure-JS parts — the `course-audit` rule engine, the tracker's helpers
+(dates, merge, backfill), and the face-match math — have unit tests
+(zero-dependency `node:test`):
 
 ```bash
 npm test          # or: node --test
 ```
 
 They also run in CI on every push and PR (`.github/workflows/test.yml`). When you
-change an audit rule, add or update a case in `test/audit.test.js`.
+change an audit rule, add or update a case in `test/audit.test.js`; tracker
+helpers are covered in `test/tracker.test.js`.
 
 ## Deploy
 
