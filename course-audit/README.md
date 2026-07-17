@@ -45,7 +45,8 @@ A checkbox above the findings — "Also scan for PAN card presence" — controls
 | Button | Behavior |
 |---|---|
 | **For Teachers Review** | Builds a noise-filtered prompt (~15–25 rows from a 200-row course), copies to clipboard. Paste into Claude.ai or Claude in Chrome. |
-| **Send to WhatsApp** | Opens a recipient modal. Pick a saved recipient, a recent number, or type a new one. Opens WhatsApp Web/desktop pre-filled with a short summary. |
+| **Send to WhatsApp** | Opens a recipient modal. Pick a saved recipient, a recent number, or type a new one. Opens WhatsApp Web/desktop pre-filled with a short summary. This goes to an **admin**, not the applicant. |
+| **💬 notify** (per finding) | On a finding whose issue the applicant can fix (e.g. missing/invalid PAN), a small notify button opens WhatsApp to that **applicant's own** mobile, pre-filled with a short Hindi message listing their fixable issues (`buildNotifyMessage`/`notifyLinesFor`). Only shown when the applicant has a reachable number and the finding is applicant-actionable (admin-side findings like Conf No get no notify line). |
 | **⇆ Float / Split** | Toggle layout. |
 | **Clear cache** | Wipes the cross-course duplicate cache in localStorage (rebuilt on the next audit run). Does not touch dipi or the current course. |
 | **✕ Close** | Closes the audit panel and restores the page to full width. |

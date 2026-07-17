@@ -268,10 +268,13 @@ Both userscripts append to `#dipi-fab-stack`, a flex column at bottom-right of t
 
 Layout (top to bottom):
 
-| Order | Button | Color | Source |
-|---|---|---|---|
-| 10 | ↻ Audit | blue | audit userscript |
-| 20 | 🔄 Scrape | blue | scraper userscript |
+| Order | Button | Source |
+|---|---|---|
+| 10 | ↻ Audit | audit userscript |
+| 20 | 🔄 Scrape | scraper userscript |
+| 30 | 📷 Photos | photo-review userscript |
+
+(Buttons share one neutral slate style now, not per-tool colors.)
 
 The earlier "Open Tracker" FAB (order 5) was removed in v1.1.0 — it tried to resume the last session regardless of which course page the user was on, which led to confusing cross-course overlays. Resume is now surfaced from the scraper results screen instead: when a session for the current course exists in `localStorage.dipiTracker.sessionIndex`, the primary button label flips to "Resume Calling (N marked)".
 

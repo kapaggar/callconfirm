@@ -105,7 +105,7 @@
         setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u26A0\uFE0F</div><div>No courses found. Logged in?</div>' + B('_ds-x', 'rgba(148,163,184,.12)', '\u2715 Close', '#cbd5e1', '1px solid #475569') + '</div>');
         document.getElementById('_ds-x').onclick = close; return;
       }
-      var h = '<div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;margin-bottom:2px">\u{1F9D8}</div><div style="font-size:15px;font-weight:700">Select Course</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">Expected + Confirmed</div></div>';
+      var h = '<div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;margin-bottom:2px">\u{1F9D8}</div><div style="font-size:15px;font-weight:700">Select Course</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">Expected + Confirmed + WaitList/Review pool</div></div>';
       if (upcoming.length) {
         h += '<div style="font-size:10px;font-weight:700;color:#8aa8cc;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">\u{1F4C5} Upcoming</div>';
         upcoming.forEach(function (c, i) {

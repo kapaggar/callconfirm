@@ -312,8 +312,9 @@
   }
 
   // Backfill candidates for a freed seat: pool members of the same group
-  // (gender balance — NM can only replace NM etc.; no group on the cancelled
-  // row matches anyone), excluding candidates already called off (cancelled)
+  // (gender balance — NM can only replace NM etc.; a cancelled row with no
+  // group is unconstrained and matches pool members of every group),
+  // excluding candidates already called off (cancelled)
   // or already given a seat (confirmed — offering twice double-books),
   // ordered still-to-reach first then by name, capped. (pure)
   function backfillCandidates(applicants, cancelled, max = 3) {
