@@ -105,10 +105,17 @@ Risk = chance of breaking something that already works (write paths, merges).
 ### 9. Letter pre-fetch cache
 - **Requirement:** Before a calling session, pre-fetch personalized letters
   for all pending applicants (currently fetched one-by-one when 💬 is tapped).
-- **Helps:** WhatsApp sends become instant during calls. **Effort: S**, but
-  mind rate: throttle the `l.php` fetches.
+- **Helps:** WhatsApp sends become instant during calls. **Effort: S** — the
+  letter-fetch bridge (2026-07-16) already handles the CORS-blocked fetch;
+  this is a throttled loop over it plus a cache. Mind rate limits.
 
-### 10. WhatsApp templates per course type
+### 10. Group pill counts include the pool
+- **Requirement:** Group pills (NM/OM/...) count all applicants while the main
+  view lists only non-pool rows, so a pill can exceed the visible rows.
+- **Helps:** Removes a small "numbers don't add up" confusion. **Effort: S**
+  (decide: scope counts to the active view, or leave as filter control).
+
+### 11. WhatsApp templates per course type
 - **Requirement:** Fallback message template varies by course type
   (10-day vs 3-day vs STP), editable in one place.
 - **Helps:** Right expectations in the nudge message. **Effort: S.**

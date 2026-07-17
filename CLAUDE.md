@@ -8,11 +8,12 @@ on-device WASM) for face detection — self-hosted under `vendor/mediapipe/` onl
 the extension zip). Deployed by pushing to `main` — GitHub Pages serves the repo at
 `https://kapaggar.github.io/callconfirm/`.
 
-The `course-audit` rule engine (`course-audit/audit.js`) is pure and framework-agnostic,
-so it has unit tests: run `npm test` (or `node --test`) — zero-dependency `node:test`, also
-run in CI on push/PR (`.github/workflows/test.yml`). When you change an audit rule, add or
-update a case in `test/audit.test.js`. The DOM-bound tools (scraper/tracker/loader/review)
-have no automated tests.
+The pure parts have unit tests — the `course-audit` rule engine (`test/audit.test.js`),
+the tracker's `_internal` helpers (`test/tracker.test.js`: dates, merge, backfill), and the
+face-match math (`test/facematch.test.js`). Run `npm test` (or `node --test`) —
+zero-dependency `node:test`, also run in CI on push/PR (`.github/workflows/test.yml`).
+When you change one of these, add or update a case. DOM-bound code paths have no
+automated tests — verify in the browser.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
 DIPI endpoint captures, data model, decisions, roadmap). `course-audit/README.md` covers the
@@ -66,7 +67,7 @@ orientation.
   background worker or Tampermonkey's GM_xmlhttpRequest; both allow-list the l.php URL.
   See CALL-TRACKER-MEMORY.md → "DIPI letter system". Bookmarklet users get the generic fallback.
 - Applicant data is sensitive (names, phones, health disclosures). Keep everything client-side;
-  nothing may leave the browser except explicit user actions (wa.me, exports).
+  nothing may leave the browser except explicit user actions (WhatsApp deep links / wa.me, exports).
 - 👥 Duplicates (photo-review/facematch.js) stores **face descriptors** — biometric-adjacent —
   in IndexedDB `vcall_faces` (dipi origin, last 12 courses). They must NEVER leave the browser;
   only the name+distance summary goes to `localStorage.faceDedup.flags` (read by the audit
