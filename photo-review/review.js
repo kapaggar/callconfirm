@@ -1153,7 +1153,7 @@
       });
       state.items.forEach(it => { if (it.el) updateCard(it); });
       const stats = await window.FaceMatch.indexStats();
-      if (matches.length) showDupSummary(matches, stats);
+      if (matches.length) showDupSummary(matches, stats, indexed, noFace);
       else toast('No matching faces — indexed ' + indexed + ' face(s)' +
         (noFace ? ' (' + noFace + ' had no detectable face)' : '') +
         ', compared across ' + stats.courses + ' stored course(s)');
@@ -1163,7 +1163,7 @@
     }
   }
 
-  function showDupSummary(matches, stats) {
+  function showDupSummary(matches, stats, indexed, noFace) {
     const ov = document.getElementById(OVERLAY_ID);
     const modal = document.createElement('div');
     modal.className = 'pr-modal';
@@ -1176,7 +1176,7 @@
     modal.innerHTML = `
       <div class="pr-modal-card">
         <div class="pr-modal-title">👥 ${matches.length} face match(es) across ${stats.courses} stored course(s)</div>
-        <div class="pr-modal-warn">Face similarity is a lead, not proof — matches can be siblings, twins, or photo quirks. Verify against ID documents before acting. These flags also appear in the course-audit panel (Cross-course). All processing stayed in this browser.</div>
+        <div class="pr-modal-warn">Face similarity is a lead, not proof — matches can be siblings, twins, or photo quirks. Verify against ID documents before acting. These flags also appear in the course-audit panel (Cross-course). All processing stayed in this browser.${noFace ? ` ⚠️ ${noFace} photo(s) in this course had no detectable face and were NOT compared — check them by eye.` : ''}</div>
         <div class="pr-modal-tablewrap"><table class="pr-modal-table"><tr><th>this course</th><th>matches</th><th>where</th><th>distance</th></tr>${rows}</table></div>
         <div class="pr-modal-actions"><button class="pr-btn pr-btn-gray" data-x="close">Close</button></div>
       </div>`;
