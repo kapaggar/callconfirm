@@ -150,13 +150,40 @@
     return loadPromise;
   }
 
+  // Draw the canvas centered on a larger white canvas (frac = margin per side
+  // as a fraction of each dimension). TinyFaceDetector misses faces that fill
+  // the frame (tight passport crops); padding shrinks the face's relative size
+  // into the range the detector was trained on. Landmarks + descriptor are
+  // computed from the same pixels, so padding doesn't degrade the embedding.
+  function padCanvas(src, frac) {
+    const mx = Math.round(src.width * frac), my = Math.round(src.height * frac);
+    const c = document.createElement('canvas');
+    c.width = src.width + 2 * mx;
+    c.height = src.height + 2 * my;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(src, mx, my);
+    return c;
+  }
+
   // 128-d descriptor for the (largest) face on a canvas, or null when no face
   // is confidently found. Input should be upright (pass the corrected canvas).
+  // Retry ladder: plain canvas first, then a padded copy (rescues zoomed-in
+  // close-ups), each at a normal then permissive score threshold. Extra passes
+  // only run on photos that would otherwise be skipped, so the common case
+  // stays one detection per photo.
   async function describe(canvas) {
     const fa = root.faceapi;
-    const opts = new fa.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 });
-    const det = await fa.detectSingleFace(canvas, opts).withFaceLandmarks().withFaceDescriptor();
-    return det ? det.descriptor : null; // Float32Array(128)
+    for (const make of [() => canvas, () => padCanvas(canvas, 0.5)]) {
+      const c = make();
+      for (const scoreThreshold of [0.3, 0.1]) {
+        const opts = new fa.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold });
+        const det = await fa.detectSingleFace(c, opts).withFaceLandmarks().withFaceDescriptor();
+        if (det) return det.descriptor; // Float32Array(128)
+      }
+    }
+    return null;
   }
 
   // Index one course: compute + store a descriptor per entry.
