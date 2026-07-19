@@ -288,11 +288,11 @@ Course: ${courseLabel}.
 
 The following ${rows.length} active applicants disclosed something in Physical Health, Mental Health, Medication, Pregnancy, Addiction, or Other Info. Generic positives, single-word negative states, geographic names, and "No" pregnancy for males are filtered out.
 
-For each, give a one-line verdict using ONE of:
-  PROCEED       -- no concern
+Review every applicant, but in your response list ONLY those needing action -- one line each (Conf No, name, verdict, brief reason) using ONE of:
   TEACHER-CALL  -- needs assistant teacher call before course
-  DEFER         -- defer to a later course (recent surgery, third-trimester pregnancy, acute crisis)
-  DECLINE       -- not suitable for a silent 10-day at this time
+  DEFER         -- defer to a later course (recent surgery, third-trimester pregnancy, acute crisis, or otherwise not suitable for a silent 10-day at this time)
+
+Do NOT list applicants with no concern -- no lines, no verdicts for them. End with a single line: "Remaining N: no concern."
 
 Be conservative on: active mental health symptoms with current crisis, surgery within 3 months, third-trimester pregnancy, severe addiction with concurrent depression, psychiatric medication changes within 30 days. Sevaks face a slightly higher bar.
 
