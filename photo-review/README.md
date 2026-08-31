@@ -6,6 +6,10 @@ Review and correct applicant photos on `https://dipi.vridhamma.org/search-course
 
 Works on any centre — nothing is hardcoded.
 
+Scan, debug, or add a photo-review feature: `docs/FEATURE-DEBUG-PROMPT.md`.
+Manual cases: `docs/QA-TEST-PLAN.md` (PR / PRA / DUP / UP). Face-match math:
+`test/facematch.test.js`.
+
 ## Files
 
 | File | Role |

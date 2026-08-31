@@ -90,6 +90,12 @@ IndexedDB at `dipi.vridhamma.org` origin, key `vcall_inline`. For backup or movi
 
 The tracker overlay uses scoped CSS (all selectors prefixed with `#dipi-tracker-overlay`) so it doesn't bleed into the dipi page styles. The overlay covers the full viewport so the underlying dipi page is hidden while the tracker is active.
 
+## Developing / debugging
+
+Agent and human contract for a cold scan, a bug, or a new tracker feature:
+`docs/FEATURE-DEBUG-PROMPT.md`. Architecture hand-off: `CALL-TRACKER-MEMORY.md`.
+Manual cases: `docs/QA-TEST-PLAN.md` (SCR / TRK / WA / BF / EXP).
+
 ## Roadmap
 
 See `TODO.md` for the prioritized backlog (next up: diff-mode re-scrape). Shipped from the old list here: session export/import, wait-list backfill, reconfirmation countdown.

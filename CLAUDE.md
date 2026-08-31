@@ -17,8 +17,9 @@ automated tests — verify in the browser.
 
 **Read `CALL-TRACKER-MEMORY.md` first** — it is the full hand-off document (architecture,
 DIPI endpoint captures, data model, decisions, roadmap). `course-audit/README.md` covers the
-audit side. `TODO.md` is the prioritized feature backlog. This file is only the quick
-orientation.
+audit side. `TODO.md` is the prioritized feature backlog. For a cold scan, a bug, or a new
+feature, follow `docs/FEATURE-DEBUG-PROMPT.md` (modes: scan / debug / feature). This file is
+only the quick orientation.
 
 ## Layout
 
@@ -76,7 +77,30 @@ orientation.
 ## Working style (Kapil)
 
 - Answer first, then reasoning. Surface tradeoffs and uncertainty explicitly.
-- En-dashes/hyphens, no em-dashes. Suggest commit messages when shipping changes.
+- En-dashes/hyphens, no em-dashes.
 - Test against real course data before declaring done; audit rules were calibrated against
   four 2026 course exports and should not regress.
 - Ask before adding audit rules (hard error vs soft flag) or tracker features that write to dipi.
+
+## Git commit messages (mandatory)
+
+Keep commit messages pristine. They describe **only the work being done** — what
+changed and why. Nothing else.
+
+**Do not** add extra information, contribution credit, or tooling placeholders:
+
+- `Co-Authored-By:` (any name or address, including Claude / Grok / Codex)
+- `Claude-Session:`, session URLs, or other session metadata
+- `Generated with …`, `Made with …`, `Made-with:`, or similar watermarks
+- Empty trailer blocks, model names, or marketing fluff about the agent
+
+Preferred shape (match existing history):
+
+```text
+type(scope): short imperative summary
+
+Optional body: what changed and why it matters.
+```
+
+Good: `fix(photo-review): index close-up faces the dup check skipped`.
+Not: a correct subject plus a `Co-Authored-By` trailer.

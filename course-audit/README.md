@@ -163,6 +163,12 @@ Adapter and rules tested against four 2026 course exports (May 20, Jun 3, Jun 17
 - Emergency = own mobile: 24 active rows across all four courses
 - Cross-course actives: Vikas Kumar, Bhavana, Suruchi, Dinesh Kumar, Lalit Kumar, Monika Rani
 
+## Developing / debugging
+
+Scan, debug, or add an audit rule: `docs/FEATURE-DEBUG-PROMPT.md`. Unit tests:
+`test/audit.test.js` (`npm test`). Manual cases: `docs/QA-TEST-PLAN.md` (AUD-*).
+Ask before adding a hard error vs a soft flag.
+
 ## Roadmap
 
 - Unit tests on `audit.js` against fixture data (Node-runnable)

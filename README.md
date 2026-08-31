@@ -13,6 +13,8 @@ rotate/crop review. Everything runs client-side in your browser.
 | 📷 Photo Review | Rotate/crop applicant photos, optional write-back to dipi | `photo-review/README.md` |
 
 Architecture and hand-off notes: `CALL-TRACKER-MEMORY.md` (read this first when developing).
+Manual QA: `docs/QA-TEST-PLAN.md`. Agent scan / debug / feature contract:
+`docs/FEATURE-DEBUG-PROMPT.md`.
 
 ## Files
 
@@ -35,6 +37,8 @@ manifest.webmanifest   ← PWA config (renamed; manifest.json is the extension's
 sw.js                  ← Landing-page offline support (network-first)
 test/                  ← Unit tests: audit rules, tracker helpers, face-match math (node --test)
 TODO.md                ← Prioritized feature backlog
+docs/QA-TEST-PLAN.md   ← Manual QA cases (extension / Tampermonkey / bookmarklet)
+docs/FEATURE-DEBUG-PROMPT.md  ← Agent prompt: scan, debug, or add a feature
 ```
 
 ## Tests
@@ -87,3 +91,32 @@ Three options:
 
 All applicant data stays in your browser; nothing leaves it except explicit
 actions (WhatsApp links, exports, photo upload to dipi).
+
+## Developing / debugging
+
+Vanilla JS, no build step. The three tools share one copy of each logic file
+across bookmarklet, Tampermonkey, and the Chrome extension.
+
+| If you are… | Read |
+|---|---|
+| Adding a feature or fixing a bug | `docs/FEATURE-DEBUG-PROMPT.md` (modes: scan / debug / feature) |
+| Picking the repo up cold | `CALL-TRACKER-MEMORY.md`, then the prompt above |
+| Running a release or live-course check | `docs/QA-TEST-PLAN.md` (smoke list at the bottom) |
+| Looking at the backlog | `TODO.md` (next: diff-mode re-scrape) |
+
+Paste into an agent session, or work it yourself:
+
+```text
+Read docs/FEATURE-DEBUG-PROMPT.md. MODE=scan. Produce the scan output template. Do not edit files.
+
+Read docs/FEATURE-DEBUG-PROMPT.md. MODE=debug. Channel=extension. Symptom: …
+
+Read docs/FEATURE-DEBUG-PROMPT.md. MODE=feature. Implement TODO.md #2 diff-mode re-scrape.
+```
+
+`npm test` covers the pure helpers (audit rules, tracker dates/merge/backfill,
+face-match math). Overlay / DataTable / letter-bridge paths have no automated
+browser tests — verify on a real `/search-course/` page. Bump `@version` in the
+matching `.user.js` shell on every tool change; extension updates need
+`git pull` plus Reload (`?v=Date.now()` is inert on `chrome-extension://`).
+Do not commit applicant exports, HAR files, or `store-assets/`.

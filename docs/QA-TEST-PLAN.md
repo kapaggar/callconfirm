@@ -13,7 +13,8 @@ differs per channel, which is where channel-specific regressions hide.
 
 This is manual — there is no browser automation harness in this repo (only `npm test` /
 `node --test` unit tests for the pure logic: `test/audit.test.js`, `test/tracker.test.js`,
-`test/facematch.test.js`). Run this plan:
+`test/facematch.test.js`). For how an agent should scan or debug against these cases,
+see `docs/FEATURE-DEBUG-PROMPT.md`. Run this plan:
 
 - Before a release (any push to `main` that touches `scraper.js`, `tracker-inline.js`,
   `course-audit/*.js`, `photo-review/*.js`, `extension-fab.js`, `background.js`,
@@ -65,7 +66,7 @@ the row.
 | INST-05 | Tampermonkey audit/photo installs need no special grants | Tampermonkey installed | 1. Open `course-audit/userscript.user.js` raw URL, install. 2. Repeat for `photo-review/userscript.user.js`. | Both install cleanly with `@grant none` — no elevated-permission dialog. | TM | |
 | INST-06 | Bookmarklet install via setup.html | None | 1. Open `setup.html`. 2. Drag the all-in-one bookmarklet to the bookmarks bar. 3. On a dipi `/search-course/` page, click the bookmark. | All three FAB buttons (🔍 Audit, 📥 Scrape, 📷 Photos) appear bottom-right. | Bkm | |
 | INST-07 | Bookmarklet on wrong host | Bookmarklet installed | 1. Click the bookmarklet on a non-`vridhamma.org` page. | Alert: "DIPI Tools: not on vridhamma.org. Run this bookmark on a dipi page." Nothing else happens. | Bkm | |
-| INST-08 | README "Setup" step count vs list (doc-only) | — | Read `README.md` → "Setup (one-time)". | **Known doc bug (verify/fix separately):** the section is headed "Two options:" but lists three (Bookmarklet, Tampermonkey, Chrome extension). Not a code defect — flag for a docs fix, not a QA fail. | — | |
+| INST-08 | README "Setup" lists three channels | — | Read `README.md` → "Setup (one-time)". | Headed "Three options:" and lists Bookmarklet, Tampermonkey, and Chrome extension. | — | |
 
 ---
 

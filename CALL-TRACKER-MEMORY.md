@@ -480,10 +480,12 @@ Page UI driving (programmatically select + click Update) requires the row to be 
 
 ## How to pick this up cold (instructions for next Claude)
 
-1. Read this document first
+Follow `docs/FEATURE-DEBUG-PROMPT.md` (MODE=scan / debug / feature). Then:
+
+1. Read this document
 2. Read `course-audit/README.md` if asked about audit
 3. Files to view before suggesting changes:
-   - `tracker-inline.js` (the dashboard — 600+ lines)
+   - `tracker-inline.js` (the dashboard — 1000+ lines)
    - `scraper.js` (the data extraction — 350+ lines)
    - `scraper.user.js` (Tampermonkey shell)
    - `course-audit/userscript.user.js` if FAB stack is touched
