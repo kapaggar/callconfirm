@@ -2,13 +2,27 @@
 
 ## Overview
 
-This is a personal PWA for tracking Vipassana course attendance calls. It runs entirely in the browser no backend, no database, no server-side code.
+Personal browser tooling for DIPI course admin (call tracker, course audit, photo
+review). It runs entirely in the browser: no backend, no server-side database.
 
 ## Data Handling
 
-- **All data stays on your device.** Applicant names, phone numbers, and call status are stored in the browser's IndexedDB. Nothing is sent to any server.
-- **The DIPI bookmarklet** runs in the context of your authenticated DIPI session. It reads data from the page you're viewing and passes it to the tracker via URL hash or clipboard. No credentials are transmitted or stored.
-- **GitHub Pages** only serves static files (HTML, JS, CSS). It has no access to your data.
+- **All applicant data stays on your device.** Names, phones, call status, photo
+  corrections, and face descriptors live in IndexedDB / localStorage on the
+  `dipi.vridhamma.org` origin. Nothing is uploaded to GitHub Pages or any
+  third-party analytics host.
+- **The bookmarklet, Tampermonkey shells, and Chrome extension** run in the
+  context of your authenticated DIPI session. They read the applicants page
+  you already have open. Session hand-off between machines is an explicit
+  JSON backup export/import (treat those files like CSV exports), not a URL hash.
+- **GitHub Pages** only serves static files (HTML, JS, CSS, vendored WASM). It
+  has no access to your data.
+- **Exceptions that leave the browser** are explicit user actions: `tel:` and
+  WhatsApp deep links, CSV/JSON/PDF exports, personalized letter fetch from
+  `applicant.vridhamma.org/l.php?a=` (allow-listed), and photo write-back to
+  dipi's own `/app/{aid}/edit` form.
+- **Face descriptors** (`vcall_faces`) are biometric-adjacent and must never
+  be exported. Matches are leads, not proof.
 
 ## Reporting a Vulnerability
 
@@ -16,4 +30,5 @@ If you find a security issue, email [kapaggar@gmail.com](mailto:kapaggar@gmail.c
 
 ## Scope
 
-This tool is designed for personal use by a single operator. It is not intended for multi-user deployment or to handle regulated data.
+This tool is designed for personal use by a single operator (or a small
+centre team sharing backups). It is not intended for multi-user deployment.

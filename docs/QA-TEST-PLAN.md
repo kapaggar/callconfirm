@@ -96,7 +96,7 @@ the row.
 | SCR-07 | Result badges accuracy | — | Compare Exp / Conf / 🪑 Pool / NM / OM / SM / NF / OF / SF badge counts against the actual dipi page. | All counts match; 🪑 Pool = WaitList + Review count. | Ext, TM, Bkm | |
 | SCR-08 | Resume-vs-Scrape primary button | A session with `withProgress > 0` already exists for this course (`localStorage.dipiTracker.sessionIndex`) | Re-scrape the same course. | Primary button reads "📞 Resume Calling (N marked)" instead of "📞 Open Inline Call Tracker". | Ext, TM, Bkm | |
 | SCR-09 | Copy Data / CSV / AID:Phone exports | Post-scrape results screen | Click each of 📋 Copy Data, 📊 Download CSV, 📤 Export AID:Phone in turn. | Clipboard alert shows correct count; CSV downloads with header `S.No,Name,AID,Mobile,Home,Office,Email,Status,Group,Type,Age` and correctly-escaped fields; AID:Phone file only includes rows with both an AID and a mobile, alert states the exported count. | Ext, TM, Bkm | |
-| SCR-10 | Course-picker text vs actual filter (doc/UI discrepancy) | On `/centre/63`, open the picker | Read the picker's subtitle under "Select Course". | **Note:** subtitle reads "Expected + Confirmed" only, but the filter it actually navigates with (`STATUS_FILTER`) also includes WaitList and Review — the UI copy is stale relative to the pool feature. Not a functional bug (the scrape still captures the pool correctly), just misleading copy — flag for a text fix. | Ext, TM, Bkm | |
+| SCR-10 | Course-picker subtitle matches the real filter | On `/centre/63`, open the picker | Read the picker's subtitle under "Select Course". | Subtitle mentions Expected, Confirmed, **and** the WaitList/Review pool — matching `STATUS_FILTER`. Clicking a course navigates with that full filter. | Ext, TM, Bkm | |
 
 ---
 

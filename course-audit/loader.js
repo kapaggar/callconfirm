@@ -15,6 +15,10 @@
     return;
   }
 
+  const escHtml = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
   // ---- 1. Load audit engine ----
   const SCRIPT_BASE = (function () {
     const cs = document.currentScript;
@@ -628,8 +632,8 @@ ${sections.join('\n\n')}`;
         : '';
       const cls = CHECK_CLASS[f.check] || '';
       return `<div class="finding ${cls}">
-        ${editLink} ${notifyBtn} <b>${f.name||''}</b><br>
-        <span class="desc">${describe(f)}</span>
+        ${editLink} ${notifyBtn} <b>${escHtml(f.name||'')}</b><br>
+        <span class="desc">${escHtml(describe(f))}</span>
       </div>`;
     }).join('');
   };
@@ -639,7 +643,6 @@ ${sections.join('\n\n')}`;
   // Face-duplicate flags written by photo-review's 👥 Duplicates scan (same
   // courseKey shape, "centreid/courseid"). Summary only — names + distances,
   // no biometric data. Empty until that scan has been run for this course.
-  const esc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const faceFlags = (() => {
     try { return JSON.parse(localStorage.getItem('faceDedup.flags') || '{}')[courseKey] || null; }
     catch { return null; }
@@ -648,8 +651,8 @@ ${sections.join('\n\n')}`;
     if (!faceFlags || !faceFlags.matches.length) return '';
     return `<div style="margin:6px 0 2px;font-size:11px;color:#666">👥 Face matches from the photo scan (${new Date(faceFlags.ts).toLocaleDateString('en-IN')}) — verify ID documents before acting:</div>` +
       faceFlags.matches.map(m => `<div class="finding f-dup">
-        <b>${esc_(m.name)}</b> ↔ ${esc_(m.otherName)}<br>
-        <span class="desc">matched by face — ${m.withinCourse ? 'same course' : 'course ' + esc_(m.otherCourse)}, distance ${esc_(m.dist)} (${esc_(m.tier)})</span>
+        <b>${escHtml(m.name)}</b> ↔ ${escHtml(m.otherName)}<br>
+        <span class="desc">matched by face — ${m.withinCourse ? 'same course' : 'course ' + escHtml(m.otherCourse)}, distance ${escHtml(m.dist)} (${escHtml(m.tier)})</span>
       </div>`).join('');
   };
 
@@ -657,8 +660,8 @@ ${sections.join('\n\n')}`;
     <div class="hdr">
       <div class="hdr-left">
         <div class="title">Course Audit</div>
-        <div class="sub1">${courseLabel}</div>
-        <div class="sub2">${courseKey} — ${mapped.length} rows, ${activeCount} active</div>
+        <div class="sub1">${escHtml(courseLabel)}</div>
+        <div class="sub2">${escHtml(courseKey)} — ${mapped.length} rows, ${activeCount} active</div>
       </div>
       <div class="hdr-right">
         <button id="ca-claude">For Teachers Review</button>
@@ -676,7 +679,7 @@ ${sections.join('\n\n')}`;
     <details ${(findings.crossCourse.length || (faceFlags && faceFlags.matches.length))?'open':''}><summary><span class="sec sec-blue">Cross-course</span> <span class="cnt">(${findings.crossCourse.length}${faceFlags && faceFlags.matches.length ? ' + ' + faceFlags.matches.length + ' 👥' : ''})</span></summary>${renderList(findings.crossCourse)}${faceFlagsHTML()}</details>
     <details><summary><span class="sec sec-gray">Soft / advisory</span> <span class="cnt">(${findings.soft.length})</span></summary>${renderList(findings.soft)}</details>
     <details><summary><span class="sec-min">Sensitive field counts</span></summary><pre>${JSON.stringify(findings.sensitiveCounts,null,2)}</pre></details>
-    <details><summary><span class="sec-min">Cache</span></summary><div class="cache">${cached || '(empty)'}</div></details>
+    <details><summary><span class="sec-min">Cache</span></summary><div class="cache">${escHtml(cached) || '(empty)'}</div></details>
 
     <!-- WhatsApp modal (hidden via CSS until .wa-shown is added) -->
     <div id="ca-wa-modal" class="wa-modal">
@@ -838,14 +841,14 @@ ${sections.join('\n\n')}`;
       const saved = getSaved();
       if (saved.length) {
         savedBox.innerHTML = saved.map((r,i) =>
-          `<span class="chip" data-e164="${r.e164}" data-i="${i}">${r.label || maskNumber(r.e164)} <span class="del" data-del="${i}" title="Remove">×</span></span>`
+          `<span class="chip" data-e164="${escHtml(r.e164)}" data-i="${i}">${escHtml(r.label || maskNumber(r.e164))} <span class="del" data-del="${i}" title="Remove">×</span></span>`
         ).join('');
         savedSec.hidden = false;
       } else { savedSec.hidden = true; }
 
       const recent = loadJSON(WA_RECENT_KEY, []).filter(e => !saved.some(s => s.e164 === e));
       if (recent.length) {
-        recentBox.innerHTML = recent.map(e => `<span class="chip" data-e164="${e}">${maskNumber(e)}</span>`).join('');
+        recentBox.innerHTML = recent.map(e => `<span class="chip" data-e164="${escHtml(e)}">${escHtml(maskNumber(e))}</span>`).join('');
         recentSec.hidden = false;
       } else { recentSec.hidden = true; }
     }

@@ -29,6 +29,12 @@
   // loadInlineTracker() short-circuits there.
   var TRACKER_BASE = window._DIPI_TRACKER_BASE || SELF_BASE || '';
 
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // Expose API for re-scrape from inline tracker
   window.DipiScraper = { run: runScraper, pick: pickCourse };
 
@@ -112,12 +118,12 @@
           var cn = counts[c.id];
           var chip = 'font-size:10px;background:rgba(148,163,184,.14);color:#a8b3c2;padding:2px 6px;border-radius:4px';
           var bg = cn ? '<div style="display:flex;gap:6px;margin-top:4px"><span style="' + chip + '">Exp ' + cn.exp + '</span><span style="' + chip + '">Conf ' + cn.conf + '</span><span style="' + chip + '">\u03A3 ' + (cn.exp + cn.conf) + '</span></div>' : '';
-          h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;background:' + (i === 0 ? '#24344c' : '#1e293b') + ';border:' + (i === 0 ? '1px solid #3f65a7' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff"><div style="font-size:13px;font-weight:600;line-height:1.3">' + c.title + '</div>' + (i === 0 ? '<div style="font-size:9px;color:#8aa8cc;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') + bg + '</button>';
+          h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;background:' + (i === 0 ? '#24344c' : '#1e293b') + ';border:' + (i === 0 ? '1px solid #3f65a7' : '1px solid #334155') + ';border-radius:10px;cursor:pointer;color:#fff"><div style="font-size:13px;font-weight:600;line-height:1.3">' + escHtml(c.title) + '</div>' + (i === 0 ? '<div style="font-size:9px;color:#8aa8cc;margin-top:2px;font-weight:700">NEXT UPCOMING</div>' : '') + bg + '</button>';
         });
       }
       if (others.length) {
         h += '<details style="margin-top:12px"><summary style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;cursor:pointer">\u{1F4C1} All (' + others.length + ')</summary><div style="margin-top:6px">';
-        others.forEach(function (c) { h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:4px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:12px">' + c.title + '</button>'; });
+        others.forEach(function (c) { h += '<button class="_ds-c" data-id="' + c.id + '" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:4px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:12px">' + escHtml(c.title) + '</button>'; });
         h += '</div></details>';
       }
       h += '<button id="_ds-x" style="display:block;width:100%;padding:12px;margin-top:12px;background:transparent;color:#64748b;border:1px solid #334155;border-radius:10px;font-size:13px;cursor:pointer">\u2715 Cancel</button>';
@@ -125,7 +131,7 @@
       document.querySelectorAll('._ds-c').forEach(function (b) { b.onclick = function () { goTo(this.dataset.id); }; });
       document.getElementById('_ds-x').onclick = close;
     }).catch(function (e) {
-      setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u274C</div><div>' + e.message + '</div>' + B('_ds-x', 'rgba(148,163,184,.12)', '\u2715 Close', '#cbd5e1', '1px solid #475569') + '</div>');
+      setUI('<div style="text-align:center;padding:20px"><div style="font-size:24px;margin-bottom:8px">\u274C</div><div>' + escHtml(e.message) + '</div>' + B('_ds-x', 'rgba(148,163,184,.12)', '\u2715 Close', '#cbd5e1', '1px solid #475569') + '</div>');
       document.getElementById('_ds-x').onclick = close;
     });
   }
@@ -284,7 +290,7 @@
         }
         showResults(apps, title, dates, courseType);
       } catch (e) {
-        msg('Error: ' + e.message);
+        msg('Error: ' + escHtml(e.message));
         console.error(e);
       }
     })();
@@ -318,8 +324,8 @@
       '<div style="text-align:center;padding:16px 0">' +
       '<div style="font-size:24px;margin-bottom:6px">\u2705</div>' +
       '<div style="font-size:17px;font-weight:700">' + apps.length + ' applicants scraped</div>' +
-      '<div style="font-size:12px;color:#94a3b8;margin-top:2px">' + cleanTitle + '</div>' +
-      (dates ? '<div style="font-size:11px;color:#8aa8cc;margin-top:2px">\u{1F4C5} ' + dates + '</div>' : '') +
+      '<div style="font-size:12px;color:#94a3b8;margin-top:2px">' + escHtml(cleanTitle) + '</div>' +
+      (dates ? '<div style="font-size:11px;color:#8aa8cc;margin-top:2px">\u{1F4C5} ' + escHtml(dates) + '</div>' : '') +
       '<div style="font-size:10px;color:#64748b;margin-top:4px">AIDs captured: ' + withAid + '/' + apps.length + '</div>' +
       '<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:14px 0">' +
       bdg('Exp', nExp) + bdg('Conf', nConf) + bdg('🪑 Pool', nPool) +

@@ -171,7 +171,6 @@ Ask before adding a hard error vs a soft flag.
 
 ## Roadmap
 
-- Unit tests on `audit.js` against fixture data (Node-runnable)
 - Diff mode: highlight only findings new since last run
 - Cloud-API WhatsApp path (Meta Business / Twilio) for scheduled / automated sends
 - PIN code → State validator

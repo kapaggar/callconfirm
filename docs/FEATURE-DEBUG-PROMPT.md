@@ -369,7 +369,7 @@ Goal: a report a future agent can act on, not a tour of files.
 4. **Write paths** — enumerate every dipi write and every privileged fetch. Confirm allow-lists, dry-runs, and "ask first" gates.
 5. **Purity boundary** — what is in `_internal` + `node:test`, what is DOM-only (must be verified in a real dipi session).
 6. **Backlog vs code** — for each `TODO.md` P1–P3 item, mark shipped / partial / missing, with the function that would change.
-7. **Doc drift** — README/SECURITY/QA notes that disagree with code (known: SECURITY.md still talks like a PWA; picker subtitle "Expected + Confirmed" vs filter including WaitList/Review).
+7. **Doc drift** — README / SECURITY / QA notes that disagree with code. (Picker subtitle and SECURITY.md PWA wording were fixed; re-check if you still see them.)
 8. **Risk register** — see §8.3.
 
 Do not dump `graphify-out/`. If you need a map, use the file/API tables above.
@@ -586,8 +586,8 @@ Before a store zip / any change under files listed in `manifest.json` `web_acces
 Versions at last inventory (re-read files; do not trust this paragraph after a release):
 
 - Extension `manifest.json` **1.5.6**
-- `scraper.user.js` **1.7.4**
-- `course-audit/userscript.user.js` **1.2.4**
+- `scraper.user.js` **1.7.5**
+- `course-audit/userscript.user.js` **1.2.5**
 - `photo-review/userscript.user.js` **1.9.0**
 
 **Already shipped (do not duplicate):**

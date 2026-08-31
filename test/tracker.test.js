@@ -8,7 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 require('../tracker-inline.js');
-const { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions, isPool, backfillCandidates } = globalThis.DipiTracker._internal;
+const { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates } = globalThis.DipiTracker._internal;
 
 // ── parseCourseStart ──
 
@@ -75,6 +75,19 @@ test('priority order: pending first, cancelled last, unknown mid-rank', () => {
     .map(status => priorityRank({ status }));
   assert.deepStrictEqual(order, [0, 1, 2, 3, 4, 5, 6]);
   assert.strictEqual(priorityRank({ status: 'something_new' }), 3);
+});
+
+// The ⏳ chip's "N to reach" must match priority sort: anyone still in the
+// calling queue (rank < confirmed), not only pending/callback/no_answer.
+test('stillToReach includes tentative and left_message; excludes confirmed and cancelled', () => {
+  assert.strictEqual(stillToReach({ status: 'pending' }), true);
+  assert.strictEqual(stillToReach({ status: 'callback' }), true);
+  assert.strictEqual(stillToReach({ status: 'no_answer' }), true);
+  assert.strictEqual(stillToReach({ status: 'tentative' }), true);
+  assert.strictEqual(stillToReach({ status: 'left_message' }), true);
+  assert.strictEqual(stillToReach({ status: 'confirmed' }), false);
+  assert.strictEqual(stillToReach({ status: 'cancelled' }), false);
+  assert.strictEqual(stillToReach({ status: 'something_new' }), true);
 });
 
 // ── validateBackup ──

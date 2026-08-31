@@ -300,6 +300,11 @@
   function priorityRank(a) {
     return PRIORITY[a.status] !== undefined ? PRIORITY[a.status] : 3;
   }
+  // Still in the calling queue (priority-sort ranks below Confirmed). Used by
+  // the ⏳ chip's "N to reach" so Tentative / Left Msg are not dropped.
+  function stillToReach(a) {
+    return priorityRank(a) < PRIORITY.confirmed;
+  }
 
   // ── Wait-list backfill pool ──
   // Applicants scraped with dipi status WaitList or Review are the backfill
@@ -758,7 +763,7 @@
     const poolA = A.filter(isPool);
     const stats = {};
     mainA.forEach(a => { stats[a.status] = (stats[a.status] || 0) + 1; });
-    const pending = mainA.filter(a => ['pending', 'no_answer', 'callback'].includes(a.status)).length;
+    const toReach = mainA.filter(stillToReach).length;
     const { groupFilter, courseDates, courseType } = state;
 
     const GROUPS = { NM:'New ♂', OM:'Old ♂', SM:'Seva ♂', NF:'New ♀', OF:'Old ♀', SF:'Seva ♀' };
@@ -780,11 +785,11 @@
     const cd = deadlineInfo(parseCourseStart(courseDates || courseTitle), rDays);
     const tminusHTML = cd ? (() => {
       const txt = cd.daysToStart < 0 ? 'Course started ' + (-cd.daysToStart) + 'd ago'
-        : cd.daysToStart === 0 ? '🏁 Course starts TODAY · ' + pending + ' to reach'
+        : cd.daysToStart === 0 ? '🏁 Course starts TODAY · ' + toReach + ' to reach'
         : 'Starts in ' + cd.daysToStart + 'd · reconfirm deadline (T-' + rDays + ') ' +
           (cd.daysToDeadline > 0 ? 'in ' + cd.daysToDeadline + 'd'
             : cd.daysToDeadline === 0 ? 'TODAY' : (-cd.daysToDeadline) + 'd overdue') +
-          ' · ' + pending + ' to reach';
+          ' · ' + toReach + ' to reach';
       return `<div class="dt-tminus ${cd.level}" id="dt-tminus" title="Centres auto-cancel seats not reconfirmed ~2–3 weeks before start. Click to switch the deadline offset (7/14/21 days).">⏳ ${txt}</div>`;
     })() : '';
 
@@ -869,7 +874,7 @@
         <div class="dt-header-top">
           <div style="min-width:0;flex:1">
             <h1>🧘 ${escHtml(courseDates || courseTitle)}</h1>
-            <div class="sub">${mainA.length} applicants · ${pending} remaining${poolA.length?' · '+poolA.length+' in pool':''}${courseType?' · '+courseType:''}</div>
+            <div class="sub">${mainA.length} applicants · ${toReach} remaining${poolA.length?' · '+poolA.length+' in pool':''}${courseType?' · '+courseType:''}</div>
           </div>
           <div class="dt-header-btns">
             <button class="dt-btn dt-btn-blue" id="dt-export-btn">📤 Export</button>
@@ -887,7 +892,7 @@
         </div>` : ''}
         ${tminusHTML}
         ${Object.keys(groupStats).length ? `<div style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding-bottom:2px">${groupPills.join('')}</div>` : ''}
-        <div class="dt-stats"><button class="dt-pill dt-sort-pill" id="dt-sort-pill" title="Toggle list order: priority floats still-to-reach applicants (pending / callback / no-answer) to the top">${prioritySortOn() ? '⏳ Priority' : 'A–Z'}</button><button class="dt-pill dt-sort-pill" id="dt-wa-pill" title="Where 💬 opens WhatsApp: App = native desktop app (no browser tab), Web = wa.me tab">${waMode() === 'app' ? '💬 App' : '💬 Web'}</button>${statPills.join('')}</div>
+        <div class="dt-stats"><button class="dt-pill dt-sort-pill" id="dt-sort-pill" title="Toggle list order: priority floats still-to-reach applicants (pending / callback / no-answer / tentative / left msg) to the top">${prioritySortOn() ? '⏳ Priority' : 'A–Z'}</button><button class="dt-pill dt-sort-pill" id="dt-wa-pill" title="Where 💬 opens WhatsApp: App = native desktop app (no browser tab), Web = wa.me tab">${waMode() === 'app' ? '💬 App' : '💬 Web'}</button>${statPills.join('')}</div>
         <div class="dt-search"><input type="text" placeholder="🔍 Search by name..." value="${escHtml(search)}" id="dt-search-box"></div>
       </div>
       <div class="dt-list">${cards.length ? cards : '<div class="dt-empty"><div style="font-size:32px">🔍</div><div style="margin-top:8px">No applicants match this filter</div></div>'}</div>
@@ -1041,6 +1046,6 @@
 
   root.DipiTracker = {
     open, import: importPublic, close: closeTracker,
-    _internal: { parseCourseStart, deadlineInfo, priorityRank, validateBackup, mergeSessions, isPool, backfillCandidates }, // pure, for tests
+    _internal: { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates }, // pure, for tests
   };
 })(typeof window !== 'undefined' ? window : globalThis);
