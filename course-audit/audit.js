@@ -118,7 +118,8 @@
   const KNOWN_STATUS = new Set([
     'received', 'review', 'clarification', 'clarification-response',
     'preconfirmation', 'confirmed', 'expected', 'waitlist',
-    'duplicate', 'rejected', 'regret', 'cancelled', 'attended', 'left', 'errors'
+    'duplicate', 'rejected', 'regret', 'cancelled', 'attended', 'left', 'errors',
+    'custom',
   ]);
 
   const isActive = (r) => ACTIVE.has(String(r.Status || '').toLowerCase().trim());

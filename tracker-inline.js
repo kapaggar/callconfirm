@@ -267,17 +267,25 @@
   function parseCourseStart(dates, now = new Date()) {
     const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
     const s = String(dates || '');
-    // First day-month pair with a REAL month wins — titles like
-    // "3 Day / 2026 / 30th-Jul…" must skip the "3 Day" pseudo-match.
+    // Day-month pairs with a REAL month — titles like "3 Day / 2026 / 30th-Jul…"
+    // must skip the "3 Day" pseudo-match.
+    const hits = [];
     for (const m of s.matchAll(/(\d{1,2})(?:st|nd|rd|th)?[-\s]+([A-Za-z]{3})/g)) {
       const mon = MONTHS[m[2].toLowerCase()];
       if (mon === undefined) continue;
-      const ym = s.match(/\b(20\d{2})\b/);
-      let d = new Date(ym ? parseInt(ym[1], 10) : now.getFullYear(), mon, parseInt(m[1], 10));
-      if (!ym && (now - d) > 60 * 86400000) d = new Date(d.getFullYear() + 1, mon, parseInt(m[1], 10));
-      return isNaN(d) ? null : d;
+      hits.push({ day: parseInt(m[1], 10), mon });
     }
-    return null;
+    if (!hits.length) return null;
+    const start = hits[0];
+    const end = hits[1];
+    const ym = s.match(/\b(20\d{2})\b/);
+    // A trailing year in "30th-Dec to 10th-Jan 2027" belongs to the *end*
+    // month; the start sits in the previous calendar year.
+    let year = ym ? parseInt(ym[1], 10) : now.getFullYear();
+    if (ym && end && start.mon > end.mon) year -= 1;
+    let d = new Date(year, start.mon, start.day);
+    if (!ym && (now - d) > 60 * 86400000) d = new Date(d.getFullYear() + 1, start.mon, start.day);
+    return isNaN(d) ? null : d;
   }
 
   // Countdown facts for the header chip. (pure)
@@ -340,6 +348,13 @@
     const m = location.pathname.match(/\/search-course\/(\d+)\/(\d+)/);
     return m ? m[1] + '/' + m[2] : '';
   }
+  function findExistingSession(all, { courseKey, title, dates }) {
+    if (courseKey) {
+      const byKey = (all || []).find(s => s.courseKey === courseKey);
+      if (byKey) return byKey;
+    }
+    return (all || []).find(s => s.title === title && (s.dates || '') === (dates || '')) || null;
+  }
   function writeSessionIndexEntry(courseKey, apps, sessionId) {
     if (!courseKey || !apps.length) return;
     let idx = {};
@@ -381,7 +396,7 @@
     const sid = 's-' + Date.now();
     // Try to find an existing session for the same course (by title) — merge instead of create
     const all = await dbGetAll('sessions');
-    const existing = all.find(s => s.title === cleanTitle && s.dates === (dates || ''));
+    const existing = findExistingSession(all, { courseKey, title: cleanTitle, dates: dates || '' });
     if (existing) {
       // Merge: carry over status/notes/attempts where AID matches
       const byAid = {};
@@ -609,9 +624,13 @@
     if (!db) await openDB();
     const incoming = payload.session;
     const all = await dbGetAll('sessions');
-    const existing = all.find(s => s.id === incoming.id) ||
-      all.find(s => s.title === incoming.title && (s.dates || '') === (incoming.dates || '')) ||
-      (incoming.courseKey ? all.find(s => s.courseKey === incoming.courseKey) : null);
+    // Match the same course (key, then title+dates). A colliding session id
+    // from another course must not merge — mint a fresh id instead (EXP-08).
+    let existing = findExistingSession(all, incoming);
+    if (!existing && incoming.id) {
+      const byId = all.find(s => s.id === incoming.id);
+      if (byId && byId.title === incoming.title && (byId.dates || '') === (incoming.dates || '')) existing = byId;
+    }
     if (existing) {
       const { merged, stats } = mergeSessions(existing, incoming);
       existing.applicants = merged;
@@ -805,13 +824,13 @@
     });
 
     const cards = filtered.map((a, idx) => {
-      const st = STATUSES[a.status];
+      const st = STATUSES[a.status] || STATUSES.pending;
       const isExp = expandedId === a.id;
       let exp = '';
       if (isExp) {
         const phoneBtns = [];
-        if (a.mobile) phoneBtns.push(`<a href="tel:${a.mobile}" class="dt-phone-btn dt-phone-mobile" data-call="${a.id}">📱 ${a.mobile}</a>`);
-        if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${a.home}" class="dt-phone-btn dt-phone-home" data-call="${a.id}">🏠 ${a.home}</a>`);
+        if (a.mobile) phoneBtns.push(`<a href="tel:${escHtml(a.mobile)}" class="dt-phone-btn dt-phone-mobile" data-call="${escHtml(a.id)}">📱 ${escHtml(a.mobile)}</a>`);
+        if (a.home && a.home !== a.mobile) phoneBtns.push(`<a href="tel:${escHtml(a.home)}" class="dt-phone-btn dt-phone-home" data-call="${escHtml(a.id)}">🏠 ${escHtml(a.home)}</a>`);
         const waPhone = (a.mobile || a.home || '').replace(/^\+/, '');
         if (waPhone) phoneBtns.push(`<button class="dt-phone-btn dt-phone-wa" data-wa="${a.id}">💬 WhatsApp${a.aid ? ' ✉' : ''}</button>`);
 
@@ -829,7 +848,7 @@
             <select class="dt-dipi-sel" data-dipi-sel="${a.id}">${opts}</select>
             <input class="dt-dipi-custom" data-dipi-custom="${a.id}" type="text" placeholder="Custom reason" style="display:none">
             <button class="dt-dipi-update" data-dipi-update="${a.id}">Update</button>
-            <a href="/app/${a.aid}/edit" target="_blank" class="dt-dipi-edit" title="Open full edit on dipi">📝</a>
+            <a href="/app/${encodeURIComponent(a.aid)}/edit" target="_blank" class="dt-dipi-edit" title="Open full edit on dipi">📝</a>
           </div>`;
         }
 
@@ -1046,6 +1065,6 @@
 
   root.DipiTracker = {
     open, import: importPublic, close: closeTracker,
-    _internal: { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates }, // pure, for tests
+    _internal: { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates, findExistingSession }, // pure, for tests
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -8,7 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 require('../tracker-inline.js');
-const { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates } = globalThis.DipiTracker._internal;
+const { parseCourseStart, deadlineInfo, priorityRank, stillToReach, validateBackup, mergeSessions, isPool, backfillCandidates, findExistingSession } = globalThis.DipiTracker._internal;
 
 // ── parseCourseStart ──
 
@@ -38,6 +38,11 @@ test('garbage or empty input → null', () => {
   assert.strictEqual(parseCourseStart('Dhamma Sudha Course'), null);
   assert.strictEqual(parseCourseStart(''), null);
   assert.strictEqual(parseCourseStart(null), null);
+});
+
+test('Dec-to-Jan range uses the year for the end month, not the start', () => {
+  const d = parseCourseStart('30th-Dec to 10th-Jan 2027', new Date(2026, 11, 1));
+  assert.deepStrictEqual([d.getFullYear(), d.getMonth(), d.getDate()], [2026, 11, 30]);
 });
 
 // ── deadlineInfo ──
@@ -161,6 +166,20 @@ test('no AID: falls back to name+mobile matching', () => {
 });
 
 // ── wait-list backfill pool ──
+
+test('findExistingSession prefers courseKey over title+dates', () => {
+  const a = { id: 's-1', title: 'Old Title', dates: '1st-Jan to 10th-Jan 2026', courseKey: '63/1' };
+  const b = { id: 's-2', title: 'New Title', dates: '1st-Jan to 10th-Jan 2026', courseKey: '63/2' };
+  const hit = findExistingSession([a, b], { courseKey: '63/1', title: 'New Title', dates: '1st-Jan to 10th-Jan 2026' });
+  assert.strictEqual(hit.id, 's-1');
+});
+
+test('findExistingSession falls back to title+dates when courseKey is missing', () => {
+  const a = { id: 's-1', title: '10 Day', dates: '1st-Jan to 10th-Jan 2026' };
+  const hit = findExistingSession([a], { courseKey: '', title: '10 Day', dates: '1st-Jan to 10th-Jan 2026' });
+  assert.strictEqual(hit.id, 's-1');
+  assert.strictEqual(findExistingSession([a], { courseKey: '', title: 'Other', dates: '1st-Jan to 10th-Jan 2026' }), null);
+});
 
 test('isPool: WaitList and Review are pool, others are not', () => {
   assert.strictEqual(isPool({ dipiStatus: 'WaitList (NM4)' }), true);

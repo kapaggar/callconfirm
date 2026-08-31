@@ -148,6 +148,10 @@ test('unrecognised Status value → status_unknown', () => {
   assert.ok(has(run([mkRow({ Status: 'Foobar' })]).hardErrors, 'status_unknown'));
 });
 
+test('Custom is a recognised dipi status (not status_unknown)', () => {
+  assert.ok(!has(run([mkRow({ Status: 'Custom' })]).hardErrors, 'status_unknown'));
+});
+
 test('inactive rows are exempt from the active-row rules', () => {
   // Rejected row full of problems should still raise nothing.
   const f = run([mkRow({ Status: 'Rejected', PhoneMobile: '12', Email: 'bad', City: '' })]);

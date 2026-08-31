@@ -1210,6 +1210,7 @@
         if (s.auto.rot && s.rot !== undefined) item.rot = s.rot;
         if (s.auto.crop && s.crop) item.crop = s.crop;
         item.auto = true;
+        item.uploaded = false; // new geometry re-arms ⬆dipi (same as rotate/crop)
         item.suggestion = null; // consumed into a needs-confirm correction
         saveCorrection(item);
         fixed++;
@@ -1267,7 +1268,11 @@
           photoId, url: r.photo,
           name: cleanName(r.name), aid: r.aid || '', confno: r.confno || '',
           status: r.app_status || '',
-          rot: prev.rot || 0, crop: prev.crop || null, done: !!prev.done, auto: !!prev.auto,
+          // After ⬆dipi the live JPEG is already corrected; leftover rot/crop
+          // would double-apply. Ignore geometry when the uploaded marker is set.
+          rot: prev.uploaded ? 0 : (prev.rot || 0),
+          crop: prev.uploaded ? null : (prev.crop || null),
+          done: !!prev.done, auto: prev.uploaded ? false : !!prev.auto,
           uploaded: !!prev.uploaded, uploadedAt: prev.uploadedAt || null,
           bitmap: null, suggestion: null, el: null,
         };

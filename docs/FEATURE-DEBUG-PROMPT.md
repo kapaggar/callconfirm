@@ -586,9 +586,9 @@ Before a store zip / any change under files listed in `manifest.json` `web_acces
 Versions at last inventory (re-read files; do not trust this paragraph after a release):
 
 - Extension `manifest.json` **1.5.6**
-- `scraper.user.js` **1.7.5**
-- `course-audit/userscript.user.js` **1.2.5**
-- `photo-review/userscript.user.js` **1.9.0**
+- `scraper.user.js` **1.7.6**
+- `course-audit/userscript.user.js` **1.2.6**
+- `photo-review/userscript.user.js` **1.9.1**
 
 **Already shipped (do not duplicate):**
 
