@@ -29,3 +29,7 @@ store-assets/
 
 # node (tests are zero-dependency, but guard against stray installs)
 node_modules/
+
+# Accidental clone of auth-02/hub (unrelated Python indexer). Not part of
+# DIPI tools; never commit it — this repo is also the GitHub Pages site.
+hub/
